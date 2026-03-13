@@ -1,8 +1,8 @@
 {
-  "name": "pi-live-dashboard",
+  "name": "iot-security-monitoring-in-hospitals",
   "version": "0.1.0",
   "private": true,
-  "description": "Simple live dashboard for MQTT from a Raspberry Pi gateway",
+  "description": "Unified hospital IoT security dashboard with simulated telemetry, IPFIX-style flows, and ML-based anomaly detection.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

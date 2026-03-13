@@ -5,7 +5,7 @@ Real-time monitoring dashboard and monitoring pipeline prototype for IoT Securit
 ## 1. Project Summary
 
 This capstone project provides:
-- Live MRI telemetry ingestion from MQTT topics.
+- Live IoT/IoMT telemetry ingestion from MQTT topics and simulated datasets.
 - Real-time web dashboard with gauges, trends, alerts, and state timeline.
 - Network visibility using IPFIX-style summaries (flow rate, traffic volume, top talkers).
 - Optional Firebase Realtime Database persistence for live and historical data.
@@ -47,7 +47,7 @@ capstone-project/
 
 ## 4. Current Architecture
 
-1. MRI / gateway or local test datasets publish telemetry to MQTT topics (for example: `hospital/mri/001/...`).
+1. IoT/IoMT devices, gateways, or local test datasets publish telemetry to MQTT topics (for example: `hospital/device/001/...`).
 2. `server.js` subscribes to MQTT and classifies payloads as:
    - telemetry (`.../telemetry`)
    - status (`.../status`)
@@ -122,7 +122,7 @@ Notes:
 ## 7. Data Contracts
 
 ### Telemetry payload (MQTT)
-Expected numeric fields:
+Expected numeric fields in the current simulated hospital monitoring flow:
 - `coil_temp_c`
 - `gradient_temp_c`
 - `helium_level_pct`
@@ -131,6 +131,13 @@ Expected numeric fields:
 - `vibration_g`
 - `table_pos_mm`
 - `uptime_s`
+- `heart_rate`
+- `spo2`
+- `resp_rate`
+- `systolic`
+- `diastolic`
+- `pulse_rate`
+- `network_load`
 
 Optional:
 - `state` (IDLE / WARMUP / SCANNING / COOLDOWN / ERROR)
@@ -139,7 +146,7 @@ Optional:
 Example:
 ```json
 {
-  "device": "mri-001",
+  "device": "iomt-device-01",
   "state": "SCANNING",
   "coil_temp_c": 42.1,
   "gradient_temp_c": 39.4,
@@ -148,7 +155,10 @@ Example:
   "rf_power_pct": 61.2,
   "vibration_g": 0.08,
   "table_pos_mm": 735,
-  "uptime_s": 12940
+  "uptime_s": 12940,
+  "heart_rate": 92,
+  "spo2": 97,
+  "resp_rate": 18
 }
 ```
 
@@ -156,8 +166,8 @@ Example:
 Example:
 ```json
 {
-  "device": "mri-001",
-  "ip": "192.168.137.141",
+  "device": "iomt-device-01",
+  "ip": "10.0.1.172",
   "state": "IDLE",
   "uptime_s": 13010
 }
@@ -168,9 +178,9 @@ Example:
 ```json
 {
   "severity": "high",
-  "code": "COIL_OVERHEAT",
-  "details": "Coil temp exceeded threshold",
-  "state": "SCANNING"
+  "code": "CYBER_ATTACK_DETECTED",
+  "details": "Anomalous network activity detected for the monitored IoMT device",
+  "state": "ERROR"
 }
 ```
 
