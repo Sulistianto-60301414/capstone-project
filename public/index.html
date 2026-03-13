@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IoT Security Monitoring in Hospitals</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="bg"></div>
+    <div id="alert-toast" class="alert-toast hidden" role="status" aria-live="polite">
+      <div>
+        <p id="alert-toast-title" class="alert-toast-title">Anomaly detected</p>
+        <p id="alert-toast-message" class="alert-toast-message">Waiting for alerts.</p>
+      </div>
+      <span id="alert-toast-severity" class="alert-toast-severity">medium</span>
+    </div>
+    <main class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark">IOT</div>
+          <div>
+            <p class="brand-title">IoT Security Monitoring in Hospitals</p>
+            <p class="brand-sub">Unified Device and Cyber Dashboard</p>
+          </div>
+        </div>
+        <nav class="tabs">
+          <button class="tab tab-btn" data-panel="main-panel">Main</button>
+          <button class="tab tab-btn" data-panel="overview-panel">Overview</button>
+          <button class="tab tab-btn" data-panel="network-panel">Network Insights</button>
+          <button class="tab tab-btn" data-panel="device-panel">Device Insights</button>
+        </nav>
+        <div class="top-actions">
+          <div id="ws-status" class="status-pill">
+            <span id="ws-dot" class="dot"></span>
+            <span id="ws-text">Connecting...</span>
+          </div>
+          <div class="mini">
+            <p class="label">Last update</p>
+            <p id="last-tick" class="value">--</p>
+          </div>
+        </div>
+      </header>
+
+      <section id="main-panel" class="layout main-panel">
+        <div class="card main-banner" id="anomaly-banner">
+          <div>
+            <p class="eyebrow">Anomaly Watch</p>
+            <h2 id="anomaly-status">Monitoring simulated dataset</h2>
+            <p id="anomaly-message" class="hint">Waiting for simulated cyber events.</p>
+          </div>
+          <div class="main-banner-metrics">
+            <div>
+              <p class="label">Risk score</p>
+              <p id="anomaly-score" class="metric">--</p>
+            </div>
+            <div>
+              <p class="label">Attack category</p>
+              <p id="attack-category" class="metric small">--</p>
+            </div>
+            <div>
+              <p class="label">Confidence</p>
+              <p id="cyber-confidence" class="metric small">--</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card main-metric-card">
+          <p class="label">Device IP</p>
+          <p id="cyber-device-ip" class="metric">--</p>
+          <p class="hint">Active monitored source</p>
+        </div>
+        <div class="card main-metric-card">
+          <p class="label">Destination IP</p>
+          <p id="cyber-destination-ip" class="metric">--</p>
+          <p class="hint">Current network peer</p>
+        </div>
+        <div class="card main-metric-card">
+          <p class="label">Traffic Volume</p>
+          <p id="cyber-bytes" class="metric">--</p>
+          <p class="hint">Bytes in current sample</p>
+        </div>
+        <div class="card main-metric-card">
+          <p class="label">Packets</p>
+          <p id="cyber-packets" class="metric">--</p>
+          <p class="hint">Packets in current sample</p>
+        </div>
+
+        <div class="card main-metric-card">
+          <p class="label">Temperature</p>
+          <p id="vitals-temp" class="metric">--</p>
+          <p class="hint">Latest body temperature</p>
+        </div>
+        <div class="card main-metric-card">
+          <p class="label">SpO2</p>
+          <p id="vitals-spo2" class="metric">--</p>
+          <p class="hint">Blood oxygen level</p>
+        </div>
+        <div class="card main-metric-card">
+          <p class="label">Heart Rate</p>
+          <p id="vitals-heart" class="metric">--</p>
+          <p class="hint">Latest heart rate</p>
+        </div>
+        <div class="card main-metric-card">
+          <p class="label">Respiration</p>
+          <p id="vitals-resp" class="metric">--</p>
+          <p class="hint">Respiratory rate</p>
+        </div>
+
+        <div class="card wide main-chart-card">
+          <h2>Risk Trend</h2>
+          <p class="hint">Anomaly score over time</p>
+          <canvas style="height: 180px" id="chart-risk"></canvas>
+        </div>
+        <div class="card wide main-chart-card">
+          <h2>Traffic Trend</h2>
+          <p class="hint">Bytes observed in each simulated sample</p>
+          <canvas style="height: 180px" id="chart-traffic"></canvas>
+        </div>
+
+        <div class="card main-feed-card">
+          <div class="card-head">
+            <div>
+              <h2>Incident Feed</h2>
+              <p class="hint">Latest cyber detections and alerts</p>
+            </div>
+          </div>
+          <div id="main-events" class="main-events"></div>
+        </div>
+      </section>
+
+      <section class="overview">
+        <div class="card stat-card">
+          <p class="label">Device</p>
+          <div class="device-select">
+            <span id="device-id" class="value">--</span>
+            <select id="device-picker"></select>
+          </div>
+          <p class="meta">Live telemetry device selector</p>
+        </div>
+        <div class="card stat-card">
+          <p class="label">State</p>
+          <div class="meta">
+            <span id="state-badge" class="badge">--</span>
+          </div>
+          <p class="meta">Operational mode</p>
+        </div>
+        <div class="card stat-card">
+          <p class="label">Last Seen</p>
+          <p id="last-seen" class="value">--</p>
+          <span id="online-chip" class="status-chip">--</span>
+        </div>
+        <div class="card stat-card">
+          <p class="label">IP Address</p>
+          <p id="device-ip" class="value">--</p>
+          <p id="source-note" class="meta"></p>
+        </div>
+        <div class="card stat-card">
+          <p class="label">Data Source</p>
+          <div class="device-select">
+            <span id="source-label" class="value">All</span>
+            <select id="source-picker">
+              <option value="all">All</option>
+              <option value="mqtt">MQTT</option>
+              <option value="ipfix">IPFIX</option>
+            </select>
+          </div>
+          <p class="meta">Toggle telemetry vs flow data</p>
+        </div>
+      </section>
+
+      <section id="overview-panel" class="layout">
+        <div id="mqtt-section" class="layout">
+          <div class="card highlight">
+            <h2>Coil Temp</h2>
+            <p class="hint">Alerts at 45°C / 55°C</p>
+            <p id="coil-temp-value" class="metric">-- °C</p>
+            <canvas style="height: 180px" id="gauge-coil"></canvas>
+          </div>
+          <div class="card highlight">
+            <h2>Helium Level</h2>
+            <p class="hint">Warn &lt; 50%</p>
+            <p id="helium-value" class="metric">-- %</p>
+            <canvas style="height: 180px" id="gauge-helium"></canvas>
+          </div>
+          <div class="card highlight">
+            <h2>RF Power</h2>
+            <p class="hint">Idle 0–5%</p>
+            <p id="rf-value" class="metric">-- %</p>
+            <canvas style="height: 180px" id="gauge-rf"></canvas>
+          </div>
+          <div class="card highlight">
+            <h2>Vibration</h2>
+            <p class="hint">Warn &gt; 0.25g</p>
+            <p id="vibration-value" class="metric">-- g</p>
+            <canvas style="height: 180px" id="gauge-vibration"></canvas>
+          </div>
+
+          <div id="mqtt-trends" class="card wide">
+            <h2>Temps</h2>
+            <p class="hint">Coil + Gradient</p>
+            <canvas style="height: 180px" id="chart-temps"></canvas>
+          </div>
+          <div class="card wide">
+            <h2>Mag Field</h2>
+            <p class="hint">Tight scale, subtle drift</p>
+            <canvas style="height: 180px" id="chart-mag"></canvas>
+          </div>
+
+          <div class="card highlight">
+            <h2>Helium</h2>
+            <p class="hint">Slow decay</p>
+            <canvas style="height: 180px" id="chart-helium"></canvas>
+          </div>
+          <div class="card highlight">
+            <h2>Vibration</h2>
+            <p class="hint">Spikes during error</p>
+            <canvas style="height: 180px" id="chart-vibration"></canvas>
+          </div>
+          <div class="card wide">
+            <h2>RF Power</h2>
+            <p class="hint">Ramp during warmup / scan</p>
+            <canvas style="height: 180px" id="chart-rf"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <section id="network-panel" class="layout ipfix hidden">
+        <div id="ipfix-section" class="layout ipfix">
+          <div class="card highlight">
+            <div class="card-head">
+              <div>
+                <h2>IPFIX Flow Rate</h2>
+                <p class="hint">Flows per second (5 min window)</p>
+              </div>
+              <span id="ipfix-flowrate" class="metric">-- fps</span>
+            </div>
+            <canvas style="height: 180px" id="chart-ipfix-rate"></canvas>
+          </div>
+          <div class="card highlight">
+            <div class="card-head">
+              <div>
+                <h2>IPFIX Volume</h2>
+                <p class="hint">Bytes per window</p>
+              </div>
+              <span id="ipfix-bytes" class="metric">--</span>
+            </div>
+            <canvas style="height: 180px" id="chart-ipfix-bytes"></canvas>
+          </div>
+          <div class="card highlight ipfix-talkers">
+            <h2>Source → Destination</h2>
+            <p class="hint">Top flow pairs (window)</p>
+            <div id="ipfix-talkers" class="talker-list"></div>
+            <div class="meta">
+              <p>Device → Broker: <span id="ipfix-device" class="metric">--</span></p>
+              <p>Broker → Device: <span id="ipfix-broker" class="metric">--</span></p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="device-panel" class="layout hidden">
+        <div id="mqtt-extras" class="layout">
+          <div class="card wide">
+            <h2>State Timeline</h2>
+            <p class="hint">Step view of operational mode changes</p>
+            <canvas style="height: 180px" id="chart-state"></canvas>
+          </div>
+          <div class="card highlight">
+            <h2>Table Position</h2>
+            <p class="hint">0–1200 mm travel</p>
+            <p id="table-value" class="metric">-- mm</p>
+            <div class="table-track">
+              <div id="table-fill" class="table-fill"></div>
+            </div>
+            <div class="table-marker-wrap">
+              <div class="table-marker" id="table-marker"></div>
+            </div>
+            <div class="table-ticks">
+              <span>0</span>
+              <span>600</span>
+              <span>1200</span>
+            </div>
+          </div>
+          <div class="card alerts">
+            <div class="card-head">
+              <div>
+                <h2>Alerts</h2>
+                <p class="hint">SOC-style queue</p>
+              </div>
+              <span id="alert-counts" class="meta">High: 0 · Medium: 0</span>
+            </div>
+            <div class="alerts-table">
+              <div class="alerts-row header">
+                <span>Time</span>
+                <span>Severity</span>
+                <span>Code</span>
+                <span>Details</span>
+                <span>State</span>
+              </div>
+              <div id="alerts-body" class="alerts-body"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/config.js" onerror=""></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>
