@@ -49,6 +49,24 @@
   const vitalsHeartEl = document.getElementById("vitals-heart");
   const vitalsRespEl = document.getElementById("vitals-resp");
   const mainEventsEl = document.getElementById("main-events");
+  const modelNetworkCardEl = document.getElementById("model-network-card");
+  const modelProcessCardEl = document.getElementById("model-process-card");
+  const modelMemoryCardEl = document.getElementById("model-memory-card");
+  const modelNetworkAnomalyEl = document.getElementById("model-network-anomaly");
+  const modelNetworkAttackEl = document.getElementById("model-network-attack");
+  const modelNetworkConfidenceEl = document.getElementById("model-network-confidence");
+  const modelProcessAnomalyEl = document.getElementById("model-process-anomaly");
+  const modelProcessAttackEl = document.getElementById("model-process-attack");
+  const modelProcessConfidenceEl = document.getElementById("model-process-confidence");
+  const modelMemoryAnomalyEl = document.getElementById("model-memory-anomaly");
+  const modelMemoryAttackEl = document.getElementById("model-memory-attack");
+  const modelMemoryConfidenceEl = document.getElementById("model-memory-confidence");
+  const fusionAlertCardEl = document.getElementById("fusion-alert-card");
+  const fusionAlertFlagEl = document.getElementById("fusion-alert-flag");
+  const fusionSeverityEl = document.getElementById("fusion-severity");
+  const fusionTriggeredByEl = document.getElementById("fusion-triggered-by");
+  const fusionAffectedPartsEl = document.getElementById("fusion-affected-parts");
+  const fusionReportTextEl = document.getElementById("fusion-report-text");
   const alertCountsEl = document.getElementById("alert-counts");
   const ipfixFlowrateEl = document.getElementById("ipfix-flowrate");
   const ipfixBytesEl = document.getElementById("ipfix-bytes");
@@ -210,6 +228,24 @@
   function timeLabel(ts) {
     const date = new Date(ts);
     return date.toLocaleTimeString();
+  }
+
+  function formatAttackLabel(value) {
+    const text = String(value || "normal").replace(/[_-]+/g, " ").trim();
+    if (!text) return "Normal";
+    return text.replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+
+  function updateModelCard(cardEl, anomalyEl, attackEl, confidenceEl, model) {
+    if (!model) return;
+    const anomaly = Boolean(model.anomaly);
+    if (anomalyEl) anomalyEl.textContent = anomaly ? "YES" : "NO";
+    if (attackEl) attackEl.textContent = formatAttackLabel(model.attackType || "normal");
+    if (confidenceEl) confidenceEl.textContent = `${Math.round((model.confidence || 0) * 100)}%`;
+    if (cardEl) {
+      cardEl.classList.toggle("model-alert", anomaly);
+      cardEl.classList.toggle("model-attack", Boolean(model.attacked));
+    }
   }
 
   function secondsAgo(ts) {
@@ -606,12 +642,15 @@
     const items = [];
 
     recentCyber.forEach((item) => {
+      const fusion = item.fusion || {};
       items.push({
         t: item.t,
         severity: item.severity || (item.isAttack ? "high" : "low"),
-        title: item.isAttack ? item.attackCategory || "attack" : "anomaly watch",
-        details: `${item.deviceIp || "--"} → ${item.destinationIp || "--"}`,
-        meta: `${formatBytes(item.bytes || 0)} · ${item.packets || 0} pkts`,
+        title: fusion.alert
+          ? `Fusion: ${formatAttackLabel(item.attackCategory || fusion.attackType || "alert")}`
+          : "fusion watch",
+        details: fusion.report || `${item.deviceIp || "--"} → ${item.destinationIp || "--"}`,
+        meta: `${(fusion.triggeredBy || []).join(" + ") || "No trigger"} · ${formatBytes(item.bytes || 0)} · ${item.packets || 0} pkts`,
       });
     });
 
@@ -655,28 +694,64 @@
     updateDynamicYAxis(riskChart, 100);
     updateDynamicYAxis(trafficChart, 1000);
 
+    const fusion = point.fusion || {};
+    const triggeredBy = (fusion.triggeredBy || []).join(" + ") || "--";
+    const affectedParts = (fusion.attackedParts || fusion.anomalousParts || []).join(", ") || "--";
+    const severity = String(fusion.severity || point.severity || "low").toLowerCase();
+
+    updateModelCard(
+      modelNetworkCardEl,
+      modelNetworkAnomalyEl,
+      modelNetworkAttackEl,
+      modelNetworkConfidenceEl,
+      point.models?.network
+    );
+    updateModelCard(
+      modelProcessCardEl,
+      modelProcessAnomalyEl,
+      modelProcessAttackEl,
+      modelProcessConfidenceEl,
+      point.models?.process
+    );
+    updateModelCard(
+      modelMemoryCardEl,
+      modelMemoryAnomalyEl,
+      modelMemoryAttackEl,
+      modelMemoryConfidenceEl,
+      point.models?.memory
+    );
+
     if (anomalyScoreEl) anomalyScoreEl.textContent = formatNumber(point.anomalyScore || 0, 1);
-    if (attackCategoryEl) attackCategoryEl.textContent = point.attackCategory || "normal";
+    if (attackCategoryEl) attackCategoryEl.textContent = formatAttackLabel(point.attackCategory || fusion.attackType || "normal");
     if (cyberConfidenceEl) cyberConfidenceEl.textContent = `${Math.round((point.confidence || 0) * 100)}%`;
     if (cyberBytesEl) cyberBytesEl.textContent = formatBytes(point.bytes || 0);
     if (cyberPacketsEl) cyberPacketsEl.textContent = `${point.packets || 0}`;
     if (cyberDeviceIpEl) cyberDeviceIpEl.textContent = point.deviceIp || "--";
     if (cyberDestinationIpEl) cyberDestinationIpEl.textContent = point.destinationIp || "--";
 
+    if (fusionAlertFlagEl) fusionAlertFlagEl.textContent = fusion.alert ? "TRUE" : "FALSE";
+    if (fusionTriggeredByEl) fusionTriggeredByEl.textContent = triggeredBy;
+    if (fusionAffectedPartsEl) fusionAffectedPartsEl.textContent = affectedParts;
+    if (fusionReportTextEl) fusionReportTextEl.textContent = fusion.report || "Waiting for fusion report.";
+    if (fusionSeverityEl) {
+      fusionSeverityEl.textContent = severity;
+      fusionSeverityEl.className = `tag ${severity}`;
+    }
+    if (fusionAlertCardEl) {
+      fusionAlertCardEl.classList.toggle("fusion-high", severity === "high");
+      fusionAlertCardEl.classList.toggle("fusion-medium", severity === "medium");
+    }
+
     if (anomalyStatusEl) {
-      anomalyStatusEl.textContent = point.isAttack
-        ? "Attack detected in simulated flow"
-        : point.isAnomalous
-        ? "Anomalous behavior detected"
-        : "No anomaly in latest sample";
+      anomalyStatusEl.textContent = fusion.alert
+        ? `Fusion alert: ${formatAttackLabel(fusion.attackType || point.attackCategory || "anomalous behavior")}`
+        : "No fused alert in latest sample";
     }
     if (anomalyMessageEl) {
-      anomalyMessageEl.textContent = point.isAttack
-        ? `${point.attackCategory || "Attack"} detected from ${point.deviceIp || "--"} to ${point.destinationIp || "--"}`
-        : `Latest sample from ${point.deviceIp || "--"} scored ${formatNumber(point.anomalyScore || 0, 1)} on the anomaly scale.`;
+      anomalyMessageEl.textContent = fusion.report || "Waiting for fused model output.";
     }
     if (anomalyBannerEl) {
-      anomalyBannerEl.classList.toggle("alert", Boolean(point.isAnomalous));
+      anomalyBannerEl.classList.toggle("alert", Boolean(fusion.alert));
     }
 
     renderMainEvents();

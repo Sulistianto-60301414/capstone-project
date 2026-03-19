@@ -20,20 +20,18 @@ const FIREBASE_SERVICE_ACCOUNT =
 const FIREBASE_DB_URL =
   "https://capstone-project-adaee-default-rtdb.firebaseio.com";
 const IPFIX_CSV_PATH = "";
-const IPFIX_POLL_MS = 5000;
+const IPFIX_POLL_MS = 0;
 const IPFIX_WINDOW_MS = 300000;
 const IPFIX_COMMAND = "";
 const IPFIX_HTTP_URL = "http://192.168.137.89:8080/ipfix_mqtt.csv";
 const IPFIX_DEVICE_IP = "192.168.137.141";
 const IPFIX_BROKER_IP = "192.168.137.89";
 const IPFIX_MQTT_TOPIC_SUFFIXES = ["/ipfix", "/ipfix/csv", "/flows/ipfix"];
-const SIM_DATASET_PATH = path.join(
-  __dirname,
-  "ML integration",
-  "cleaned_data.csv"
-);
+const AI_PART_DIR = path.join(__dirname, "AI part");
+const NETWORK_SAMPLE_PATH = path.join(AI_PART_DIR, "sample_network.csv");
+const PROCESS_SAMPLE_PATH = path.join(AI_PART_DIR, "sample_process.csv");
+const FUSION_SCORER_PATH = path.join(AI_PART_DIR, "fusion_score.py");
 const SIM_TICK_MS = 2500;
-const SIM_SCORER_PATH = path.join(__dirname, "ML integration", "score_flow.py");
 
 const app = express();
 app.use(express.static(path.join(__dirname, "public")));
@@ -118,8 +116,10 @@ let lastIpfix = null;
 let lastGoodIpfixCsv = "";
 let lastIpfixMqttSeen = 0;
 let lastCyber = null;
-let simulatedRows = [];
-let simulatedRowIndex = 0;
+let simulatedNetworkRows = [];
+let simulatedProcessRows = [];
+let simulatedFrames = [];
+let simulatedFrameIndex = 0;
 let simulatorTimer = null;
 
 let firebaseDb = null;
@@ -306,9 +306,9 @@ function parseCsvLine(line) {
   return out.map((part) => part.trim());
 }
 
-function loadSimulationDataset() {
+function loadCsvRecords(filePath) {
   try {
-    const csvText = fs.readFileSync(SIM_DATASET_PATH, "utf8");
+    const csvText = fs.readFileSync(filePath, "utf8");
     const lines = csvText
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -326,7 +326,31 @@ function loadSimulationDataset() {
       return row;
     });
   } catch (err) {
-    console.warn("[SIM] dataset load failed:", err.message);
+    console.warn(`[SIM] CSV load failed for ${filePath}:`, err.message);
+    return [];
+  }
+}
+
+function loadFusionFrames() {
+  try {
+    const { spawnSync } = require("child_process");
+    const result = spawnSync("python3", [FUSION_SCORER_PATH], {
+      encoding: "utf8",
+      timeout: 15000,
+      cwd: __dirname,
+    });
+
+    if (result.error) {
+      throw result.error;
+    }
+    if (result.status !== 0) {
+      throw new Error(result.stderr?.trim() || `fusion scorer exited with ${result.status}`);
+    }
+
+    const parsed = JSON.parse(result.stdout || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    console.warn("[SIM] fusion scoring failed:", err.message);
     return [];
   }
 }
@@ -340,95 +364,82 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-function scoreRowWithModel(row) {
-  try {
-    const { spawnSync } = require("child_process");
-    const result = spawnSync("python3", [SIM_SCORER_PATH], {
-      input: JSON.stringify(row),
-      encoding: "utf8",
-      timeout: 10000,
-    });
-
-    if (result.error) {
-      throw result.error;
-    }
-    if (result.status !== 0) {
-      throw new Error(result.stderr?.trim() || `scorer exited with ${result.status}`);
-    }
-
-    return JSON.parse(result.stdout || "{}");
-  } catch (err) {
-    console.warn("[SIM] model scoring failed:", err.message);
-    return {
-      is_anomalous: false,
-      anomaly_score: 0,
-      attack_probability: 0,
-      attack_prediction: "normal",
-    };
-  }
+function deriveDeviceIp(index) {
+  return `10.0.1.${172 + (index % 4)}`;
 }
 
+function deriveDestinationIp(index) {
+  return `10.0.1.${150 + ((index + 1) % 4)}`;
+}
 
-function buildTelemetryFromRow(row, index, t) {
-  const load = asNumber(row.Load);
-  const temp = asNumber(row.Temp, 28.5);
-  const heartRate = asNumber(row.Heart_rate);
-  const respRate = asNumber(row.Resp_Rate);
-  const pulseRate = asNumber(row.Pulse_Rate);
-  const anomaly = String(row.Label).trim() === "1";
+function deriveDeviceName(index) {
+  return `iomt-node-${(index % 4) + 1}`;
+}
+
+function buildTelemetryFromRows(networkRow, processRow, frame, index, t) {
+  const load = asNumber(networkRow.Load);
+  const temp = asNumber(networkRow.Temp, 28.5);
+  const heartRate = asNumber(networkRow.Heart_rate) || asNumber(networkRow.Pulse_Rate);
+  const respRate = asNumber(networkRow.Resp_Rate);
+  const pulseRate = asNumber(networkRow.Pulse_Rate);
+  const severity = String(frame?.fusion?.severity || "low").toLowerCase();
 
   let state = "IDLE";
-  if (anomaly) state = "ERROR";
+  if (severity === "high") state = "ERROR";
   else if (load > 320000) state = "SCANNING";
-  else if (load > 220000) state = "WARMUP";
+  else if (load > 220000 || severity === "medium") state = "WARMUP";
+
+  const tempOffset = severity === "high" ? 8 : severity === "medium" ? 3 : 0;
+  const processCpu = asNumber(processRow.CPU);
 
   return {
     t,
-    device: row.SrcAddr || "iomt-device-01",
+    device: deriveDeviceName(index),
     state,
-    coil_temp_c: temp + (anomaly ? 10 : 0),
-    gradient_temp_c: temp + 4 + (anomaly ? 3 : 0),
-    helium_level_pct: clamp(95 - index * 0.03, 35, 100),
-    mag_field_t: clamp(1.5 + (anomaly ? 0.015 : 0), 1.45, 1.56),
+    coil_temp_c: temp + tempOffset,
+    gradient_temp_c: temp + 4 + tempOffset * 0.5,
+    helium_level_pct: clamp(95 - index * 0.15, 35, 100),
+    mag_field_t: clamp(1.5 + (severity === "high" ? 0.015 : 0), 1.45, 1.56),
     rf_power_pct: clamp(load / 4500, 0, 100),
-    vibration_g: clamp(asNumber(row.SrcJitter) / 15 + (anomaly ? 0.12 : 0.03), 0, 0.6),
-    table_pos_mm: clamp((asNumber(row.Packet_num) * 14) % 1200, 0, 1200),
+    vibration_g: clamp(asNumber(networkRow.SrcJitter) / 15 + (severity === "high" ? 0.12 : 0.03), 0, 0.6),
+    table_pos_mm: clamp((asNumber(networkRow.TotPkts) * 28 + index * 20) % 1200, 0, 1200),
     uptime_s: index * 5,
-    heart_rate: heartRate || pulseRate,
-    spo2: asNumber(row.SpO2, 95),
+    heart_rate: heartRate,
+    spo2: asNumber(networkRow.SpO2, 95),
     resp_rate: respRate,
-    systolic: asNumber(row.SYS),
-    diastolic: asNumber(row.DIA),
+    systolic: asNumber(networkRow.SYS),
+    diastolic: asNumber(networkRow.DIA),
     pulse_rate: pulseRate,
-    network_load: asNumber(row.Rate),
+    network_load: asNumber(networkRow.Rate),
+    process_cpu: processCpu,
   };
 }
 
-function buildStatusFromRow(row, telemetry, t) {
+function buildStatusFromRows(telemetry, index, t) {
   return {
     device: telemetry.device,
-    ip: row.SrcAddr || telemetry.device,
+    ip: deriveDeviceIp(index),
     state: telemetry.state,
     uptime_s: telemetry.uptime_s,
     t,
   };
 }
 
-function buildIpfixSummaryFromRow(row, t) {
-  const bytes = asNumber(row.TotBytes);
-  const packets = asNumber(row.TotPkts);
-  const srcAddr = row.SrcAddr || IPFIX_DEVICE_IP;
-  const dstAddr = row.DstAddr || IPFIX_BROKER_IP;
+function buildIpfixSummaryFromRow(networkRow, t, index) {
+  const bytes = asNumber(networkRow.TotBytes);
+  const packets = asNumber(networkRow.TotPkts);
+  const srcAddr = deriveDeviceIp(index);
+  const dstAddr = deriveDestinationIp(index);
 
   return {
     t,
     flows: 1,
     bytes,
     packets,
-    flowRate: Math.max(0.01, asNumber(row.Rate) / 1000),
-    mqttBytes: String(row.Dport) === "1883" ? bytes : 0,
-    deviceBytes: asNumber(row.SrcBytes),
-    brokerBytes: asNumber(row.DstBytes),
+    flowRate: Math.max(0.01, asNumber(networkRow.Rate) / 1000),
+    mqttBytes: String(networkRow.Dport) === "1883" ? bytes : 0,
+    deviceBytes: asNumber(networkRow.SrcBytes),
+    brokerBytes: asNumber(networkRow.DstBytes),
     topTalkers: [
       {
         ip: srcAddr,
@@ -448,50 +459,44 @@ function buildIpfixSummaryFromRow(row, t) {
   };
 }
 
-function buildCyberFromRow(row, telemetry, ipfix, t) {
-  const model = scoreRowWithModel(row);
-  const rawScore = Number(model.anomaly_score);
-  const normalizedScore = Number.isFinite(rawScore)
-    ? clamp(Math.abs(rawScore) * 100, 0, 100)
-    : 0;
-  const attackCategory = String(model.attack_prediction || row["Attack Category"] || "normal").trim();
-  const isAttack = Boolean(model.is_anomalous) && attackCategory.toLowerCase() !== "normal";
-  const severity = isAttack
-    ? normalizedScore >= 70
-      ? "high"
-      : "medium"
-    : model.is_anomalous
-    ? "medium"
-    : "low";
+function buildCyberFromFrame(frame, networkRow, telemetry, ipfix, index, t) {
+  const fusion = frame?.fusion || {};
+  const finalAttack = String(fusion.attackType || "normal").trim();
+  const isAttack = fusion.alert && !["normal", "anomalous behavior"].includes(finalAttack.toLowerCase());
 
   return {
     t,
     device: telemetry.device,
-    deviceIp: row.SrcAddr || telemetry.device,
-    destinationIp: row.DstAddr || IPFIX_BROKER_IP,
-    attackCategory,
+    deviceIp: deriveDeviceIp(index),
+    destinationIp: deriveDestinationIp(index),
+    attackCategory: finalAttack,
     isAttack,
-    isAnomalous: Boolean(model.is_anomalous),
-    severity,
-    anomalyScore: normalizedScore,
+    isAnomalous: Boolean(fusion.alert),
+    severity: String(fusion.severity || "low").toLowerCase(),
+    anomalyScore: Number(fusion.score) || 0,
     bytes: ipfix.bytes,
     packets: ipfix.packets,
-    rate: asNumber(row.Rate),
-    protocol: row.Dir || row.Flgs || "--",
-    srcPort: row.Sport || "--",
-    dstPort: row.Dport || "--",
-    confidence: clamp(Number(model.attack_probability || 0), 0, 0.999),
-    label: String(row.Label).trim(),
+    rate: asNumber(networkRow.Rate),
+    protocol: String(networkRow.Dir || networkRow.Flgs || "--"),
+    srcPort: String(networkRow.Sport || "--"),
+    dstPort: String(networkRow.Dport || "--"),
+    confidence: clamp(Number(fusion.confidence || 0), 0, 0.999),
+    fusion,
+    models: {
+      network: frame?.network || null,
+      process: frame?.process || null,
+      memory: frame?.memory || null,
+    },
   };
 }
 
 function maybeRaiseAnomalyAlert(cyber, telemetry) {
-  if (!cyber.isAnomalous) return;
+  if (!cyber?.fusion?.alert) return;
 
-  const code = cyber.isAttack ? "CYBER_ATTACK_DETECTED" : "ANOMALY_DETECTED";
-  const details = cyber.isAttack
-    ? `${cyber.attackCategory} activity detected from ${cyber.deviceIp} to ${cyber.destinationIp}`
-    : `Unusual network behavior detected for ${cyber.deviceIp}`;
+  const triggeredBy = (cyber.fusion.triggeredBy || []).join(" + ") || "Unknown";
+  const affectedParts = (cyber.fusion.attackedParts || cyber.fusion.anomalousParts || []).join(", ") || "Unknown";
+  const code = cyber.isAttack ? "FUSION_ATTACK_ALERT" : "FUSION_ANOMALY_ALERT";
+  const details = `${cyber.fusion.report} Triggered by: ${triggeredBy}. Affected parts: ${affectedParts}.`;
 
   handleAlert({
     severity: cyber.severity === "low" ? "medium" : cyber.severity,
@@ -503,16 +508,21 @@ function maybeRaiseAnomalyAlert(cyber, telemetry) {
 }
 
 function replaySimulationRow() {
-  if (!simulatedRows.length) return;
+  if (!simulatedFrames.length || !simulatedNetworkRows.length || !simulatedProcessRows.length) {
+    return;
+  }
 
-  const row = simulatedRows[simulatedRowIndex];
-  simulatedRowIndex = (simulatedRowIndex + 1) % simulatedRows.length;
+  const frameIndex = simulatedFrameIndex;
+  simulatedFrameIndex = (simulatedFrameIndex + 1) % simulatedFrames.length;
+  const frame = simulatedFrames[frameIndex % simulatedFrames.length];
+  const networkRow = simulatedNetworkRows[frameIndex % simulatedNetworkRows.length];
+  const processRow = simulatedProcessRows[frameIndex % simulatedProcessRows.length];
   const t = Date.now();
 
-  const telemetry = buildTelemetryFromRow(row, simulatedRowIndex, t);
-  const status = buildStatusFromRow(row, telemetry, t);
-  const ipfix = buildIpfixSummaryFromRow(row, t);
-  const cyber = buildCyberFromRow(row, telemetry, ipfix, t);
+  const telemetry = buildTelemetryFromRows(networkRow, processRow, frame, frameIndex, t);
+  const status = buildStatusFromRows(telemetry, frameIndex, t);
+  const ipfix = buildIpfixSummaryFromRow(networkRow, t, frameIndex);
+  const cyber = buildCyberFromFrame(frame, networkRow, telemetry, ipfix, frameIndex, t);
 
   handleTelemetry(telemetry);
   handleStatus(status);
@@ -522,13 +532,18 @@ function replaySimulationRow() {
 }
 
 function startDatasetSimulation() {
-  simulatedRows = loadSimulationDataset();
-  if (!simulatedRows.length) {
-    console.warn("[SIM] no dataset rows loaded");
+  simulatedNetworkRows = loadCsvRecords(NETWORK_SAMPLE_PATH);
+  simulatedProcessRows = loadCsvRecords(PROCESS_SAMPLE_PATH);
+  simulatedFrames = loadFusionFrames();
+
+  if (!simulatedNetworkRows.length || !simulatedProcessRows.length || !simulatedFrames.length) {
+    console.warn("[SIM] AI part simulation bundle could not be loaded");
     return;
   }
 
-  console.log(`[SIM] loaded ${simulatedRows.length} dataset rows from ${SIM_DATASET_PATH}`);
+  console.log(
+    `[SIM] loaded network=${simulatedNetworkRows.length} process=${simulatedProcessRows.length} fused=${simulatedFrames.length} rows from AI part`
+  );
   replaySimulationRow();
   simulatorTimer = setInterval(replaySimulationRow, SIM_TICK_MS);
 }

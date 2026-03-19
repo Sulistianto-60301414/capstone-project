@@ -51,22 +51,73 @@
       <section id="main-panel" class="layout main-panel">
         <div class="card main-banner" id="anomaly-banner">
           <div>
-            <p class="eyebrow">Anomaly Watch</p>
-            <h2 id="anomaly-status">Monitoring simulated dataset</h2>
-            <p id="anomaly-message" class="hint">Waiting for simulated cyber events.</p>
+            <p class="eyebrow">Fusion Alert</p>
+            <h2 id="anomaly-status">Waiting for fused AI verdict</h2>
+            <p id="anomaly-message" class="hint">The dashboard will combine network, process, and memory model outputs into one final alert.</p>
           </div>
           <div class="main-banner-metrics">
             <div>
-              <p class="label">Risk score</p>
+              <p class="label">Fusion score</p>
               <p id="anomaly-score" class="metric">--</p>
             </div>
             <div>
-              <p class="label">Attack category</p>
+              <p class="label">Final attack</p>
               <p id="attack-category" class="metric small">--</p>
             </div>
             <div>
               <p class="label">Confidence</p>
               <p id="cyber-confidence" class="metric small">--</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="main-model-grid">
+          <div id="model-network-card" class="card model-card network-model">
+            <p class="model-title">Network Model</p>
+            <p class="model-line">Anomaly: <span id="model-network-anomaly">--</span></p>
+            <p class="model-line">Attack: <span id="model-network-attack">--</span></p>
+            <p class="model-line">Confidence: <span id="model-network-confidence">--</span></p>
+          </div>
+          <div id="model-process-card" class="card model-card process-model">
+            <p class="model-title">Process Model</p>
+            <p class="model-line">Anomaly: <span id="model-process-anomaly">--</span></p>
+            <p class="model-line">Attack: <span id="model-process-attack">--</span></p>
+            <p class="model-line">Confidence: <span id="model-process-confidence">--</span></p>
+          </div>
+          <div id="model-memory-card" class="card model-card memory-model">
+            <p class="model-title">Memory Model</p>
+            <p class="model-line">Anomaly: <span id="model-memory-anomaly">--</span></p>
+            <p class="model-line">Attack: <span id="model-memory-attack">--</span></p>
+            <p class="model-line">Confidence: <span id="model-memory-confidence">--</span></p>
+          </div>
+        </div>
+
+        <div class="fusion-divider">Fusion</div>
+
+        <div id="fusion-alert-card" class="card fusion-report-card">
+          <div class="card-head">
+            <div>
+              <h2>Final Alert</h2>
+              <p class="hint">Combined decision across all AI models</p>
+            </div>
+            <span id="fusion-severity" class="tag medium">--</span>
+          </div>
+          <div class="fusion-report-grid">
+            <div>
+              <p class="label">Alert</p>
+              <p id="fusion-alert-flag" class="metric">--</p>
+            </div>
+            <div>
+              <p class="label">Triggered By</p>
+              <p id="fusion-triggered-by" class="metric small">--</p>
+            </div>
+            <div>
+              <p class="label">Affected Part</p>
+              <p id="fusion-affected-parts" class="metric small">--</p>
+            </div>
+            <div>
+              <p class="label">Report</p>
+              <p id="fusion-report-text" class="fusion-report-text">Waiting for fusion report.</p>
             </div>
           </div>
         </div>
@@ -115,7 +166,7 @@
 
         <div class="card wide main-chart-card">
           <h2>Risk Trend</h2>
-          <p class="hint">Anomaly score over time</p>
+          <p class="hint">Fused anomaly score over time</p>
           <canvas style="height: 180px" id="chart-risk"></canvas>
         </div>
         <div class="card wide main-chart-card">
@@ -128,7 +179,7 @@
           <div class="card-head">
             <div>
               <h2>Incident Feed</h2>
-              <p class="hint">Latest cyber detections and alerts</p>
+              <p class="hint">Latest fused detections and alerts</p>
             </div>
           </div>
           <div id="main-events" class="main-events"></div>
