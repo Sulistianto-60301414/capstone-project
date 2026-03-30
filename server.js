@@ -32,8 +32,19 @@ const NETWORK_SAMPLE_PATH = path.join(AI_PART_DIR, "sample_network.csv");
 const PROCESS_SAMPLE_PATH = path.join(AI_PART_DIR, "sample_process.csv");
 const FUSION_SCORER_PATH = path.join(AI_PART_DIR, "fusion_score.py");
 const SIM_TICK_MS = 2500;
+const CONTROL_ATTACK_PRESETS = [
+  "normal",
+  "dos",
+  "ransomware",
+  "mitm",
+  "malware",
+  "data exfiltration",
+];
+const CONTROL_PARTS = ["network", "process", "memory"];
+const CONTROL_MODES = ["normal", "abnormal", "attack"];
 
 const app = express();
+app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
 const server = http.createServer(app);
@@ -55,6 +66,7 @@ wss.on("connection", (ws, req) => {
     JSON.stringify({
       type: "init",
       payload: {
+        reset: true,
         telemetry: series.telemetry,
         status: latestStatus,
         alerts,
@@ -64,6 +76,7 @@ wss.on("connection", (ws, req) => {
         lastCyber,
         lastIpfix,
         lastStatusSeen,
+        controlState: getControlStatePayload(),
       },
     })
   );
@@ -84,6 +97,29 @@ function broadcast(obj) {
       ws.send(payload);
     }
   }
+}
+
+function createInitPayload(reset = false) {
+  return {
+    reset,
+    telemetry: series.telemetry,
+    status: latestStatus,
+    alerts,
+    state: series.state,
+    ipfix: series.ipfix,
+    cyber: series.cyber,
+    lastCyber,
+    lastIpfix,
+    lastStatusSeen,
+    controlState: getControlStatePayload(),
+  };
+}
+
+function broadcastInitSnapshot(reset = false) {
+  broadcast({
+    type: "init",
+    payload: createInitPayload(reset),
+  });
 }
 
 const wsHeartbeat = setInterval(() => {
@@ -121,6 +157,14 @@ let simulatedProcessRows = [];
 let simulatedFrames = [];
 let simulatedFrameIndex = 0;
 let simulatorTimer = null;
+let controlState = createDefaultControlState();
+const deviceRuntime = new Map();
+
+const INCIDENT_WINDOW_MS = {
+  normal: [120000, 300000],
+  abnormal: [45000, 120000],
+  attack: [90000, 240000],
+};
 
 let firebaseDb = null;
 if (FIREBASE_SERVICE_ACCOUNT && FIREBASE_DB_URL) {
@@ -146,6 +190,108 @@ if (FIREBASE_SERVICE_ACCOUNT && FIREBASE_DB_URL) {
 function pushLimited(list, point, max) {
   list.push(point);
   if (list.length > max) list.shift();
+}
+
+function resetPublishedState() {
+  series.telemetry.length = 0;
+  series.state.length = 0;
+  series.ipfix.length = 0;
+  series.cyber.length = 0;
+  alerts.length = 0;
+  latestStatus = null;
+  lastStatusSeen = 0;
+  lastState = null;
+  lastIpfix = null;
+  lastCyber = null;
+  simulatedFrameIndex = 0;
+  deviceRuntime.clear();
+}
+
+function createDefaultScenario(mode = "normal") {
+  return {
+    attackType: mode === "attack" ? "dos" : "dos",
+    affectedParts: ["process"],
+    source: "Control Generator",
+    location: "Ward A",
+    probabilities:
+      mode === "attack"
+        ? { normal: 0, abnormal: 0, attack: 100 }
+        : { normal: 70, abnormal: 20, attack: 10 },
+  };
+}
+
+function createDefaultControlState() {
+  return {
+    enabled: true,
+    deviceCount: 4,
+    globalScenario: createDefaultScenario(),
+    deviceOverrides: {},
+  };
+}
+
+function normalizeScenario(input, fallbackMode = "normal") {
+  const affectedParts = Array.isArray(input?.affectedParts)
+    ? input.affectedParts.filter((part) => CONTROL_PARTS.includes(part))
+    : ["process"];
+  const attackTypeRaw = String(input?.attackType || "").trim().toLowerCase();
+  const probabilitiesInput = input?.probabilities || {};
+  const probabilities = {
+    normal: Math.max(0, Number(probabilitiesInput.normal) || 0),
+    abnormal: Math.max(0, Number(probabilitiesInput.abnormal) || 0),
+    attack: Math.max(0, Number(probabilitiesInput.attack) || 0),
+  };
+  const totalWeight =
+    probabilities.normal + probabilities.abnormal + probabilities.attack;
+  if (totalWeight <= 0) {
+    probabilities.normal = 70;
+    probabilities.abnormal = 20;
+    probabilities.attack = 10;
+  }
+
+  return {
+    attackType:
+      attackTypeRaw && attackTypeRaw !== "custom" ? attackTypeRaw : "dos",
+    affectedParts: affectedParts.length ? affectedParts : ["process"],
+    source: String(input?.source || "Control Generator").trim() || "Control Generator",
+    location: String(input?.location || "Ward A").trim() || "Ward A",
+    probabilities,
+  };
+}
+
+function normalizeControlState(input) {
+  const deviceCount = Math.min(
+    12,
+    Math.max(1, Number.parseInt(input?.deviceCount, 10) || 4)
+  );
+  const enabled = true;
+  const globalScenario = normalizeScenario(input?.globalScenario, "normal");
+  const deviceOverrides = {};
+
+  if (input?.deviceOverrides && typeof input.deviceOverrides === "object") {
+    Object.entries(input.deviceOverrides).forEach(([device, override]) => {
+      if (typeof device !== "string" || !device.trim()) return;
+      if (!override || typeof override !== "object" || !override.enabled) return;
+      deviceOverrides[device.trim()] = {
+        enabled: true,
+        scenario: normalizeScenario(override.scenario || override, "normal"),
+      };
+    });
+  }
+
+  return {
+    enabled,
+    deviceCount,
+    globalScenario,
+    deviceOverrides,
+  };
+}
+
+function getControlStatePayload() {
+  return JSON.parse(JSON.stringify(controlState));
+}
+
+function getDeviceSlot(index, deviceCount = 4) {
+  return ((index % deviceCount) + deviceCount) % deviceCount;
 }
 
 function updateState(state, t) {
@@ -237,7 +383,12 @@ function handleTelemetry(obj) {
 function handleStatus(obj) {
   if (!obj || typeof obj !== "object") return;
   const t = Date.now();
-  latestStatus = { ...obj, t };
+  latestStatus = {
+    ...obj,
+    source: String(obj.source || "Control Generator"),
+    location: String(obj.location || "Ward A"),
+    t,
+  };
   lastStatusSeen = t;
   broadcast({ type: "status", payload: latestStatus });
   updateState(latestStatus.state, t);
@@ -264,16 +415,21 @@ function handleAlert(obj) {
 }
 
 function publishCyber(point) {
-  lastCyber = point;
-  pushLimited(series.cyber, point, MAX_POINTS);
-  broadcast({ type: "cyber", payload: point });
+  const safePoint = {
+    ...point,
+    source: String(point?.source || "Control Generator"),
+    location: String(point?.location || "Ward A"),
+  };
+  lastCyber = safePoint;
+  pushLimited(series.cyber, safePoint, MAX_POINTS);
+  broadcast({ type: "cyber", payload: safePoint });
 
   if (firebaseDb) {
-    firebaseDb.ref("/live/cyber").set(point).catch(() => {});
+    firebaseDb.ref("/live/cyber").set(safePoint).catch(() => {});
     firebaseDb
       .ref("/series/cyber")
-      .child(String(point.t))
-      .set(point)
+      .child(String(safePoint.t))
+      .set(safePoint)
       .catch(() => {});
   }
 }
@@ -364,19 +520,245 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-function deriveDeviceIp(index) {
-  return `10.0.1.${172 + (index % 4)}`;
+function deriveDeviceIp(index, deviceCount = 4) {
+  return `10.0.1.${172 + getDeviceSlot(index, deviceCount)}`;
 }
 
-function deriveDestinationIp(index) {
-  return `10.0.1.${150 + ((index + 1) % 4)}`;
+function deriveDestinationIp(index, deviceCount = 4) {
+  return `10.0.1.${150 + ((getDeviceSlot(index, deviceCount) + 1) % Math.max(2, deviceCount))}`;
 }
 
-function deriveDeviceName(index) {
-  return `iomt-node-${(index % 4) + 1}`;
+function deriveDeviceName(index, deviceCount = 4) {
+  return `iomt-node-${getDeviceSlot(index, deviceCount) + 1}`;
+}
+
+function getScenarioForDevice(deviceName) {
+  const override = controlState.deviceOverrides[deviceName];
+  if (override?.enabled && override.scenario) {
+    return override.scenario;
+  }
+  return controlState.globalScenario;
+}
+
+function chooseScenarioMode(scenario) {
+  const weights = scenario?.probabilities || {};
+  const normal = Math.max(0, Number(weights.normal) || 0);
+  const abnormal = Math.max(0, Number(weights.abnormal) || 0);
+  const attack = Math.max(0, Number(weights.attack) || 0);
+  const total = normal + abnormal + attack;
+  if (total <= 0) return "normal";
+  const roll = Math.random() * total;
+  if (roll < normal) return "normal";
+  if (roll < normal + abnormal) return "abnormal";
+  return "attack";
+}
+
+function randomBetween(min, max) {
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return 60000;
+  if (max <= min) return min;
+  return Math.round(min + Math.random() * (max - min));
+}
+
+function buildScenarioState(baseScenario, now, incidentSeq = 1) {
+  const mode = chooseScenarioMode(baseScenario);
+  const duration = randomBetween(
+    INCIDENT_WINDOW_MS[mode]?.[0] || 60000,
+    INCIDENT_WINDOW_MS[mode]?.[1] || 120000
+  );
+  return {
+    id: `${mode}-${incidentSeq}-${now}`,
+    mode,
+    attackType: mode === "attack" ? baseScenario.attackType || "dos" : "normal",
+    affectedParts:
+      mode === "normal"
+        ? []
+        : Array.isArray(baseScenario.affectedParts) && baseScenario.affectedParts.length
+        ? baseScenario.affectedParts
+        : ["process"],
+    source: baseScenario.source,
+    location: baseScenario.location,
+    startedAt: now,
+    expiresAt: now + duration,
+  };
+}
+
+function resolveScenarioState(deviceName, baseScenario, now) {
+  const runtime = deviceRuntime.get(deviceName);
+  if (runtime && runtime.expiresAt > now) {
+    return { scenario: runtime, transitioned: false };
+  }
+
+  const nextSeq = (runtime?.sequence || 0) + 1;
+  const scenario = {
+    ...buildScenarioState(baseScenario, now, nextSeq),
+    sequence: nextSeq,
+  };
+  deviceRuntime.set(deviceName, scenario);
+  const transitioned = true;
+  return { scenario, transitioned };
+}
+
+function applyScenarioToModel(baseModel, partKey, scenario) {
+  const affected = scenario.affectedParts.includes(partKey);
+  const model = { ...(baseModel || {}) };
+  model.part = partKey;
+  model.label = String(model.label || `${partKey} model`);
+
+  if (scenario.mode === "normal") {
+    model.anomaly = false;
+    model.attacked = false;
+    model.attackType = "normal";
+    model.confidence = 0.16;
+    model.anomalyScore = 8;
+    return model;
+  }
+
+  if (scenario.mode === "abnormal") {
+    model.anomaly = affected;
+    model.attacked = false;
+    model.attackType = affected ? "normal" : "normal";
+    model.confidence = affected ? 0.72 : 0.26;
+    model.anomalyScore = affected ? 64 : 18;
+    return model;
+  }
+
+  model.anomaly = affected;
+  model.attacked = affected;
+  model.attackType = affected ? scenario.attackType : "normal";
+  model.confidence = affected ? 0.91 : 0.24;
+  model.anomalyScore = affected ? 92 : 14;
+  return model;
+}
+
+function buildControlledFusion(models, scenario) {
+  const attacked = models.filter((item) => item.attacked);
+  const anomalous = models.filter((item) => item.anomaly);
+  const alert = scenario.mode !== "normal";
+  let severity = "low";
+  if (attacked.length >= 2) severity = "high";
+  else if (attacked.length === 1 || anomalous.length >= 2 || scenario.mode === "abnormal") severity = "medium";
+
+  const triggeredBy = (attacked.length ? attacked : anomalous).map((item) => item.part);
+  const attackType =
+    scenario.mode === "attack"
+      ? scenario.attackType
+      : scenario.mode === "abnormal"
+      ? "anomalous behavior"
+      : "normal";
+  const confidenceSource = attacked.length ? attacked : anomalous;
+  const confidence = confidenceSource.length
+    ? Math.max(...confidenceSource.map((item) => Number(item.confidence) || 0))
+    : 0.15;
+  const scoreSource = anomalous.length ? anomalous : models;
+  const score =
+    scoreSource.reduce((sum, item) => sum + (Number(item.anomalyScore) || 0), 0) /
+    Math.max(1, scoreSource.length);
+
+  let report =
+    "No active alert. The device is operating within its expected pattern.";
+  if (scenario.mode === "abnormal") {
+    report = `The system flagged unusual activity on ${triggeredBy.join(
+      " and "
+    )}. Admin review is recommended if this pattern continues.`;
+  } else if (scenario.mode === "attack") {
+    report = `A likely ${attackType} incident is affecting ${triggeredBy.join(
+      " and "
+    )}. The dashboard is treating this as an active security alert.`;
+  }
+
+  return {
+    alert,
+    severity,
+    triggeredBy,
+    attackedParts: attacked.map((item) => item.part),
+    anomalousParts: anomalous.map((item) => item.part),
+    attackType,
+    attackVotes:
+      scenario.mode === "attack"
+        ? { [attackType]: attacked.length || 1 }
+        : {},
+    confidence: Number(confidence.toFixed(4)),
+    score: Number(score.toFixed(2)),
+    report,
+  };
+}
+
+function buildControlledTelemetry(baseTelemetry, scenario, index, deviceCount) {
+  const telemetry = { ...baseTelemetry };
+  telemetry.device = deriveDeviceName(index, deviceCount);
+  telemetry.source = scenario.source;
+  telemetry.location = scenario.location;
+
+  if (scenario.mode === "normal") {
+    telemetry.state = "IDLE";
+    telemetry.coil_temp_c = 30.2;
+    telemetry.gradient_temp_c = 33.5;
+    telemetry.helium_level_pct = 92;
+    telemetry.rf_power_pct = 4;
+    telemetry.vibration_g = 0.03;
+    telemetry.network_load = 80;
+  } else if (scenario.mode === "abnormal") {
+    telemetry.state = "WARMUP";
+    telemetry.coil_temp_c = 38.4;
+    telemetry.gradient_temp_c = 41.8;
+    telemetry.helium_level_pct = 84;
+    telemetry.rf_power_pct = 37;
+    telemetry.vibration_g = 0.21;
+    telemetry.network_load = 240;
+  } else {
+    telemetry.state = "ERROR";
+    telemetry.coil_temp_c = 47.8;
+    telemetry.gradient_temp_c = 52.2;
+    telemetry.helium_level_pct = 71;
+    telemetry.rf_power_pct = 79;
+    telemetry.vibration_g = 0.42;
+    telemetry.network_load = 420;
+  }
+
+  telemetry.uptime_s = getDeviceSlot(index, deviceCount) * 60 + simulatedFrameIndex * 5;
+  return telemetry;
+}
+
+function buildControlledIpfix(baseIpfix, scenario, index, deviceCount) {
+  const summary = { ...baseIpfix };
+  const deviceIp = deriveDeviceIp(index, deviceCount);
+  const destinationIp = deriveDestinationIp(index, deviceCount);
+  const baseBytes =
+    scenario.mode === "normal"
+      ? 24000
+      : scenario.mode === "abnormal"
+      ? 185000
+      : 760000;
+  const basePackets =
+    scenario.mode === "normal"
+      ? 46
+      : scenario.mode === "abnormal"
+      ? 260
+      : 980;
+  summary.bytes = baseBytes;
+  summary.packets = basePackets;
+  summary.flows = scenario.mode === "normal" ? 1 : scenario.mode === "abnormal" ? 3 : 7;
+  summary.flowRate = scenario.mode === "normal" ? 0.02 : scenario.mode === "abnormal" ? 0.12 : 0.38;
+  summary.mqttBytes = Math.round(summary.bytes * 0.42);
+  summary.deviceBytes = Math.round(summary.bytes * 0.58);
+  summary.brokerBytes = Math.round(summary.bytes * 0.42);
+  summary.topTalkers = [{ ip: deviceIp, bytes: summary.bytes, flows: summary.flows }];
+  summary.topPairs = [
+    {
+      pair: `${deviceIp} → ${destinationIp}`,
+      bytes: summary.bytes,
+      flows: summary.flows,
+      sa: deviceIp,
+      da: destinationIp,
+    },
+  ];
+  summary.source = scenario.source;
+  summary.location = scenario.location;
+  return summary;
 }
 
 function buildTelemetryFromRows(networkRow, processRow, frame, index, t) {
+  const deviceCount = controlState.enabled ? controlState.deviceCount : 4;
   const load = asNumber(networkRow.Load);
   const temp = asNumber(networkRow.Temp, 28.5);
   const heartRate = asNumber(networkRow.Heart_rate) || asNumber(networkRow.Pulse_Rate);
@@ -394,7 +776,7 @@ function buildTelemetryFromRows(networkRow, processRow, frame, index, t) {
 
   return {
     t,
-    device: deriveDeviceName(index),
+    device: deriveDeviceName(index, deviceCount),
     state,
     coil_temp_c: temp + tempOffset,
     gradient_temp_c: temp + 4 + tempOffset * 0.5,
@@ -416,9 +798,10 @@ function buildTelemetryFromRows(networkRow, processRow, frame, index, t) {
 }
 
 function buildStatusFromRows(telemetry, index, t) {
+  const deviceCount = controlState.enabled ? controlState.deviceCount : 4;
   return {
     device: telemetry.device,
-    ip: deriveDeviceIp(index),
+    ip: deriveDeviceIp(index, deviceCount),
     state: telemetry.state,
     uptime_s: telemetry.uptime_s,
     t,
@@ -426,10 +809,11 @@ function buildStatusFromRows(telemetry, index, t) {
 }
 
 function buildIpfixSummaryFromRow(networkRow, t, index) {
+  const deviceCount = controlState.enabled ? controlState.deviceCount : 4;
   const bytes = asNumber(networkRow.TotBytes);
   const packets = asNumber(networkRow.TotPkts);
-  const srcAddr = deriveDeviceIp(index);
-  const dstAddr = deriveDestinationIp(index);
+  const srcAddr = deriveDeviceIp(index, deviceCount);
+  const dstAddr = deriveDestinationIp(index, deviceCount);
 
   return {
     t,
@@ -460,6 +844,7 @@ function buildIpfixSummaryFromRow(networkRow, t, index) {
 }
 
 function buildCyberFromFrame(frame, networkRow, telemetry, ipfix, index, t) {
+  const deviceCount = controlState.enabled ? controlState.deviceCount : 4;
   const fusion = frame?.fusion || {};
   const finalAttack = String(fusion.attackType || "normal").trim();
   const isAttack = fusion.alert && !["normal", "anomalous behavior"].includes(finalAttack.toLowerCase());
@@ -467,8 +852,8 @@ function buildCyberFromFrame(frame, networkRow, telemetry, ipfix, index, t) {
   return {
     t,
     device: telemetry.device,
-    deviceIp: deriveDeviceIp(index),
-    destinationIp: deriveDestinationIp(index),
+    deviceIp: deriveDeviceIp(index, deviceCount),
+    destinationIp: deriveDestinationIp(index, deviceCount),
     attackCategory: finalAttack,
     isAttack,
     isAnomalous: Boolean(fusion.alert),
@@ -491,12 +876,14 @@ function buildCyberFromFrame(frame, networkRow, telemetry, ipfix, index, t) {
 }
 
 function maybeRaiseAnomalyAlert(cyber, telemetry) {
-  if (!cyber?.fusion?.alert) return;
+  if (!cyber?.fusion?.alert || !cyber.transitioned) return;
 
   const triggeredBy = (cyber.fusion.triggeredBy || []).join(" + ") || "Unknown";
   const affectedParts = (cyber.fusion.attackedParts || cyber.fusion.anomalousParts || []).join(", ") || "Unknown";
   const code = cyber.isAttack ? "FUSION_ATTACK_ALERT" : "FUSION_ANOMALY_ALERT";
-  const details = `${cyber.fusion.report} Triggered by: ${triggeredBy}. Affected parts: ${affectedParts}.`;
+  const details = `${cyber.fusion.report} Source: ${cyber.source || "Unknown"}. Location: ${
+    cyber.location || "Unknown"
+  }. Triggered by: ${triggeredBy}. Affected parts: ${affectedParts}.`;
 
   handleAlert({
     severity: cyber.severity === "low" ? "medium" : cyber.severity,
@@ -508,42 +895,67 @@ function maybeRaiseAnomalyAlert(cyber, telemetry) {
 }
 
 function replaySimulationRow() {
-  if (!simulatedFrames.length || !simulatedNetworkRows.length || !simulatedProcessRows.length) {
-    return;
-  }
-
-  const frameIndex = simulatedFrameIndex;
-  simulatedFrameIndex = (simulatedFrameIndex + 1) % simulatedFrames.length;
-  const frame = simulatedFrames[frameIndex % simulatedFrames.length];
-  const networkRow = simulatedNetworkRows[frameIndex % simulatedNetworkRows.length];
-  const processRow = simulatedProcessRows[frameIndex % simulatedProcessRows.length];
+  simulatedFrameIndex = (simulatedFrameIndex + 1) % 1000000;
   const t = Date.now();
+  for (let deviceIndex = 0; deviceIndex < controlState.deviceCount; deviceIndex += 1) {
+    const deviceName = deriveDeviceName(deviceIndex, controlState.deviceCount);
+    const { scenario, transitioned } = resolveScenarioState(
+      deviceName,
+      getScenarioForDevice(deviceName),
+      t
+    );
+    const models = {
+      network: applyScenarioToModel(null, "network", scenario),
+      process: applyScenarioToModel(null, "process", scenario),
+      memory: applyScenarioToModel(null, "memory", scenario),
+    };
+    const fusion = buildControlledFusion(Object.values(models), scenario);
+    const telemetry = buildControlledTelemetry(
+      { t, device: deviceName },
+      scenario,
+      deviceIndex,
+      controlState.deviceCount
+    );
+    const status = buildStatusFromRows(telemetry, deviceIndex, t);
+    const ipfix = buildControlledIpfix({}, scenario, deviceIndex, controlState.deviceCount);
+    status.source = scenario.source;
+    status.location = scenario.location;
+    const cyber = {
+      t,
+      device: telemetry.device,
+      deviceIp: deriveDeviceIp(deviceIndex, controlState.deviceCount),
+      destinationIp: deriveDestinationIp(deviceIndex, controlState.deviceCount),
+      source: scenario.source,
+      location: scenario.location,
+      attackCategory: fusion.attackType,
+      isAttack:
+        fusion.alert &&
+        !["normal", "anomalous behavior"].includes(fusion.attackType.toLowerCase()),
+      isAnomalous: fusion.alert,
+      severity: fusion.severity,
+      anomalyScore: fusion.score,
+      bytes: ipfix.bytes,
+      packets: ipfix.packets,
+      rate: telemetry.network_load || 0,
+      protocol: "--",
+      srcPort: "--",
+      dstPort: "--",
+      confidence: fusion.confidence,
+      fusion,
+      models,
+      transitioned,
+    };
 
-  const telemetry = buildTelemetryFromRows(networkRow, processRow, frame, frameIndex, t);
-  const status = buildStatusFromRows(telemetry, frameIndex, t);
-  const ipfix = buildIpfixSummaryFromRow(networkRow, t, frameIndex);
-  const cyber = buildCyberFromFrame(frame, networkRow, telemetry, ipfix, frameIndex, t);
-
-  handleTelemetry(telemetry);
-  handleStatus(status);
-  publishIpfixSummary(ipfix);
-  publishCyber(cyber);
-  maybeRaiseAnomalyAlert(cyber, telemetry);
+    handleTelemetry(telemetry);
+    handleStatus(status);
+    publishIpfixSummary(ipfix);
+    publishCyber(cyber);
+    maybeRaiseAnomalyAlert(cyber, telemetry);
+  }
 }
 
 function startDatasetSimulation() {
-  simulatedNetworkRows = loadCsvRecords(NETWORK_SAMPLE_PATH);
-  simulatedProcessRows = loadCsvRecords(PROCESS_SAMPLE_PATH);
-  simulatedFrames = loadFusionFrames();
-
-  if (!simulatedNetworkRows.length || !simulatedProcessRows.length || !simulatedFrames.length) {
-    console.warn("[SIM] AI part simulation bundle could not be loaded");
-    return;
-  }
-
-  console.log(
-    `[SIM] loaded network=${simulatedNetworkRows.length} process=${simulatedProcessRows.length} fused=${simulatedFrames.length} rows from AI part`
-  );
+  console.log("[CONTROL] control-driven injection loop started");
   replaySimulationRow();
   simulatorTimer = setInterval(replaySimulationRow, SIM_TICK_MS);
 }
@@ -661,16 +1073,21 @@ function summarizeIpfix(rows, now) {
 }
 
 function publishIpfixSummary(summary) {
-  lastIpfix = summary;
-  pushLimited(series.ipfix, summary, MAX_POINTS);
-  broadcast({ type: "ipfix", payload: summary });
+  const safeSummary = {
+    ...summary,
+    source: String(summary?.source || "Control Generator"),
+    location: String(summary?.location || "Ward A"),
+  };
+  lastIpfix = safeSummary;
+  pushLimited(series.ipfix, safeSummary, MAX_POINTS);
+  broadcast({ type: "ipfix", payload: safeSummary });
 
   if (firebaseDb) {
-    firebaseDb.ref("/live/ipfix").set(summary).catch(() => {});
+    firebaseDb.ref("/live/ipfix").set(safeSummary).catch(() => {});
     firebaseDb
       .ref("/series/ipfix")
-      .child(String(summary.t))
-      .set(summary)
+      .child(String(safeSummary.t))
+      .set(safeSummary)
       .catch(() => {});
   }
 }
@@ -923,6 +1340,48 @@ async function pollIpfixOnce() {
 if (IPFIX_POLL_MS > 0) {
   pollIpfixOnce();
 }
+
+function applyControlState(nextState) {
+  controlState = normalizeControlState(nextState);
+  resetPublishedState();
+  broadcastInitSnapshot(true);
+  if (simulatedFrames.length && simulatedNetworkRows.length && simulatedProcessRows.length) {
+    replaySimulationRow();
+  }
+  return getControlStatePayload();
+}
+
+app.get("/api/control", (_req, res) => {
+  res.json({
+    controlState: getControlStatePayload(),
+    attackPresets: [...CONTROL_ATTACK_PRESETS, "custom"],
+    parts: CONTROL_PARTS,
+    modes: CONTROL_MODES,
+  });
+});
+
+app.post("/api/control", (req, res) => {
+  try {
+    const next = applyControlState(req.body || {});
+    res.json({
+      ok: true,
+      controlState: next,
+    });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err.message || "Invalid control payload",
+    });
+  }
+});
+
+app.post("/api/control/reset", (_req, res) => {
+  const next = applyControlState(createDefaultControlState());
+  res.json({
+    ok: true,
+    controlState: next,
+  });
+});
 
 const mqttClient = mqtt.connect(MQTT_URL, {
   username: MQTT_USERNAME,

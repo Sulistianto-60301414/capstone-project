@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>IoT Security Monitoring in Hospitals</title>
+    <title>Hospital Cyber Alert Console</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -14,27 +14,18 @@
   </head>
   <body>
     <div class="bg"></div>
-    <div id="alert-toast" class="alert-toast hidden" role="status" aria-live="polite">
-      <div>
-        <p id="alert-toast-title" class="alert-toast-title">Anomaly detected</p>
-        <p id="alert-toast-message" class="alert-toast-message">Waiting for alerts.</p>
-      </div>
-      <span id="alert-toast-severity" class="alert-toast-severity">medium</span>
-    </div>
     <main class="app">
       <header class="topbar">
         <div class="brand">
           <div class="brand-mark">IOT</div>
           <div>
             <p class="brand-title">IoT Security Monitoring in Hospitals</p>
-            <p class="brand-sub">Unified Device and Cyber Dashboard</p>
+            <p class="brand-sub">Operator Alert Console</p>
           </div>
         </div>
-        <nav class="tabs">
+        <nav class="tabs" aria-label="Current view">
           <button class="tab tab-btn" data-panel="main-panel">Main</button>
-          <button class="tab tab-btn" data-panel="overview-panel">Overview</button>
-          <button class="tab tab-btn" data-panel="network-panel">Network Insights</button>
-          <button class="tab tab-btn" data-panel="device-panel">Device Insights</button>
+          <button class="tab tab-btn" data-panel="control-panel">Control</button>
         </nav>
         <div class="top-actions">
           <div id="ws-status" class="status-pill">
@@ -49,144 +40,161 @@
       </header>
 
       <section id="main-panel" class="layout main-panel">
-        <div class="card main-banner" id="anomaly-banner">
-          <div>
-            <p class="eyebrow">Fusion Alert</p>
-            <h2 id="anomaly-status">Waiting for fused AI verdict</h2>
-            <p id="anomaly-message" class="hint">The dashboard will combine network, process, and memory model outputs into one final alert.</p>
+        <div class="main-stage">
+          <div class="alert-hero" id="anomaly-banner">
+            <div class="alert-hero-copy">
+              <p class="eyebrow">Live Alert</p>
+              <h1 id="anomaly-status">Awaiting live alert stream</h1>
+              <p id="anomaly-message" class="hint">The console will elevate the next confirmed incident here.</p>
+            </div>
+            <div class="alert-hero-side">
+              <div class="alert-hero-score">
+                <p class="label">Fusion score</p>
+                <p id="anomaly-score" class="hero-metric">--</p>
+              </div>
+              <div class="alert-hero-summary">
+                <div>
+                  <p class="label">Final attack</p>
+                  <p id="attack-category" class="metric small">--</p>
+                </div>
+                <div>
+                  <p class="label">Confidence</p>
+                  <p id="cyber-confidence" class="metric small">--</p>
+                </div>
+              </div>
+              <button id="view-report-btn" class="primary-btn" type="button">Open report</button>
+            </div>
           </div>
-          <div class="main-banner-metrics">
-            <div>
-              <p class="label">Fusion score</p>
-              <p id="anomaly-score" class="metric">--</p>
-            </div>
-            <div>
-              <p class="label">Final attack</p>
-              <p id="attack-category" class="metric small">--</p>
-            </div>
-            <div>
-              <p class="label">Confidence</p>
-              <p id="cyber-confidence" class="metric small">--</p>
-            </div>
-          </div>
-        </div>
 
-        <div class="main-model-grid">
-          <div id="model-network-card" class="card model-card network-model">
-            <p class="model-title">Network Model</p>
-            <p class="model-line">Anomaly: <span id="model-network-anomaly">--</span></p>
-            <p class="model-line">Attack: <span id="model-network-attack">--</span></p>
-            <p class="model-line">Confidence: <span id="model-network-confidence">--</span></p>
-          </div>
-          <div id="model-process-card" class="card model-card process-model">
-            <p class="model-title">Process Model</p>
-            <p class="model-line">Anomaly: <span id="model-process-anomaly">--</span></p>
-            <p class="model-line">Attack: <span id="model-process-attack">--</span></p>
-            <p class="model-line">Confidence: <span id="model-process-confidence">--</span></p>
-          </div>
-          <div id="model-memory-card" class="card model-card memory-model">
-            <p class="model-title">Memory Model</p>
-            <p class="model-line">Anomaly: <span id="model-memory-anomaly">--</span></p>
-            <p class="model-line">Attack: <span id="model-memory-attack">--</span></p>
-            <p class="model-line">Confidence: <span id="model-memory-confidence">--</span></p>
-          </div>
-        </div>
-
-        <div class="fusion-divider">Fusion</div>
-
-        <div id="fusion-alert-card" class="card fusion-report-card">
-          <div class="card-head">
-            <div>
-              <h2>Final Alert</h2>
-              <p class="hint">Combined decision across all AI models</p>
+          <div class="incident-feed-shell">
+            <div class="card-head">
+              <div>
+                <h2>Incident Feed</h2>
+                <p class="hint">Confirmed incidents only. Select a row to open the report.</p>
+              </div>
             </div>
-            <span id="fusion-severity" class="tag medium">--</span>
+            <div id="main-events" class="main-events"></div>
           </div>
-          <div class="fusion-report-grid">
-            <div>
-              <p class="label">Alert</p>
-              <p id="fusion-alert-flag" class="metric">--</p>
-            </div>
-            <div>
-              <p class="label">Triggered By</p>
-              <p id="fusion-triggered-by" class="metric small">--</p>
-            </div>
-            <div>
-              <p class="label">Affected Part</p>
-              <p id="fusion-affected-parts" class="metric small">--</p>
-            </div>
-            <div>
-              <p class="label">Report</p>
-              <p id="fusion-report-text" class="fusion-report-text">Waiting for fusion report.</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="card main-metric-card">
-          <p class="label">Device IP</p>
-          <p id="cyber-device-ip" class="metric">--</p>
-          <p class="hint">Active monitored source</p>
-        </div>
-        <div class="card main-metric-card">
-          <p class="label">Destination IP</p>
-          <p id="cyber-destination-ip" class="metric">--</p>
-          <p class="hint">Current network peer</p>
-        </div>
-        <div class="card main-metric-card">
-          <p class="label">Traffic Volume</p>
-          <p id="cyber-bytes" class="metric">--</p>
-          <p class="hint">Bytes in current sample</p>
-        </div>
-        <div class="card main-metric-card">
-          <p class="label">Packets</p>
-          <p id="cyber-packets" class="metric">--</p>
-          <p class="hint">Packets in current sample</p>
-        </div>
-
-        <div class="card main-metric-card">
-          <p class="label">Temperature</p>
-          <p id="vitals-temp" class="metric">--</p>
-          <p class="hint">Latest body temperature</p>
-        </div>
-        <div class="card main-metric-card">
-          <p class="label">SpO2</p>
-          <p id="vitals-spo2" class="metric">--</p>
-          <p class="hint">Blood oxygen level</p>
-        </div>
-        <div class="card main-metric-card">
-          <p class="label">Heart Rate</p>
-          <p id="vitals-heart" class="metric">--</p>
-          <p class="hint">Latest heart rate</p>
-        </div>
-        <div class="card main-metric-card">
-          <p class="label">Respiration</p>
-          <p id="vitals-resp" class="metric">--</p>
-          <p class="hint">Respiratory rate</p>
-        </div>
-
-        <div class="card wide main-chart-card">
-          <h2>Risk Trend</h2>
-          <p class="hint">Fused anomaly score over time</p>
-          <canvas style="height: 180px" id="chart-risk"></canvas>
-        </div>
-        <div class="card wide main-chart-card">
-          <h2>Traffic Trend</h2>
-          <p class="hint">Bytes observed in each simulated sample</p>
-          <canvas style="height: 180px" id="chart-traffic"></canvas>
-        </div>
-
-        <div class="card main-feed-card">
-          <div class="card-head">
-            <div>
-              <h2>Incident Feed</h2>
-              <p class="hint">Latest fused detections and alerts</p>
-            </div>
-          </div>
-          <div id="main-events" class="main-events"></div>
         </div>
       </section>
 
-      <section class="overview">
+      <section id="control-panel" class="layout hidden" aria-hidden="true">
+        <div class="control-shell">
+          <div class="control-header">
+            <div>
+              <p class="eyebrow">Scenario Injection</p>
+              <h2>Injection Console</h2>
+            </div>
+            <p class="hint">The control tab is now the only scenario source. The sliders decide which state a device enters when its current incident window ends, so behavior stays stable for a realistic period.</p>
+          </div>
+
+          <div class="control-grid">
+            <div class="control-card">
+              <div class="card-head">
+                <div>
+                  <h3>1. Fleet</h3>
+                  <p class="hint">Choose how many devices you want active.</p>
+                </div>
+              </div>
+              <div class="control-quick-grid">
+                <button class="control-chip-btn" type="button" data-control-device-count="1">1 device</button>
+                <button class="control-chip-btn" type="button" data-control-device-count="4">4 devices</button>
+                <button class="control-chip-btn" type="button" data-control-device-count="8">8 devices</button>
+                <button class="control-chip-btn" type="button" data-control-device-count="12">12 devices</button>
+              </div>
+              <div id="control-preview" class="control-preview"></div>
+              <details class="control-advanced">
+                <summary class="control-advanced-summary">Advanced fleet settings</summary>
+                <label class="control-field control-advanced-field">
+                  <span class="label">Exact device count</span>
+                  <input id="control-device-count" type="number" min="1" max="12" value="4" />
+                </label>
+              </details>
+              <p id="control-status" class="control-status">Loading control state.</p>
+            </div>
+
+            <div class="control-card">
+              <div class="card-head">
+                <div>
+                  <h3>2. Global Profile</h3>
+                  <p class="hint">Pick the overall behavior for the fleet.</p>
+                </div>
+              </div>
+              <div class="control-preset-group" id="global-profile-presets">
+                <button class="control-preset-btn" type="button" data-prefix="global" data-profile="steady">Steady Ops</button>
+                <button class="control-preset-btn" type="button" data-prefix="global" data-profile="watch">Watchlist</button>
+                <button class="control-preset-btn" type="button" data-prefix="global" data-profile="incident">Incident Drill</button>
+              </div>
+              <p id="global-prob-readout" class="control-prob-readout"></p>
+              <details class="control-advanced">
+                <summary class="control-advanced-summary">Advanced profile settings</summary>
+                <div class="control-scenario-grid">
+                  <label class="control-field">
+                    <span class="label">Attack type</span>
+                    <select id="global-attack-type">
+                      <option value="dos">DoS</option>
+                      <option value="ransomware">Ransomware</option>
+                      <option value="mitm">MITM</option>
+                      <option value="malware">Malware</option>
+                      <option value="data exfiltration">Data Exfiltration</option>
+                      <option value="custom">Custom</option>
+                    </select>
+                  </label>
+                  <label id="global-attack-custom-wrap" class="control-field hidden">
+                    <span class="label">Custom attack</span>
+                    <input id="global-attack-custom" type="text" placeholder="attack label" />
+                  </label>
+                  <label class="control-field">
+                    <span class="label">Source</span>
+                    <input id="global-source" type="text" placeholder="Control Generator" />
+                  </label>
+                  <label class="control-field">
+                    <span class="label">Location</span>
+                    <input id="global-location" type="text" placeholder="Ward A" />
+                  </label>
+                </div>
+                <div class="control-prob-grid">
+                  <label class="control-field">
+                    <span class="label">Normal share</span>
+                    <input id="global-prob-normal" type="range" min="0" max="100" step="1" />
+                  </label>
+                  <label class="control-field">
+                    <span class="label">Abnormal share</span>
+                    <input id="global-prob-abnormal" type="range" min="0" max="100" step="1" />
+                  </label>
+                  <label class="control-field">
+                    <span class="label">Attack share</span>
+                    <input id="global-prob-attack" type="range" min="0" max="100" step="1" />
+                  </label>
+                </div>
+                <div class="control-parts">
+                  <p class="label">Affected parts</p>
+                  <label><input type="checkbox" data-part-group="global" value="network" /> Network</label>
+                  <label><input type="checkbox" data-part-group="global" value="process" /> Process</label>
+                  <label><input type="checkbox" data-part-group="global" value="memory" /> Memory</label>
+                </div>
+              </details>
+            </div>
+          </div>
+
+          <div class="control-card">
+            <div class="card-head">
+              <div>
+                <h3>3. Device Overrides</h3>
+                <p class="hint">Only open the devices that should behave differently from the fleet profile.</p>
+              </div>
+            </div>
+            <div id="control-device-list" class="control-device-list"></div>
+          </div>
+
+          <div class="control-actions">
+            <button id="control-apply-btn" class="primary-btn" type="button">Apply controls</button>
+            <button id="control-reset-btn" class="ghost-btn" type="button">Reset defaults</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="overview hidden" aria-hidden="true">
         <div class="card stat-card">
           <p class="label">Device</p>
           <div class="device-select">
@@ -226,7 +234,7 @@
         </div>
       </section>
 
-      <section id="overview-panel" class="layout">
+      <section id="overview-panel" class="layout hidden" aria-hidden="true">
         <div id="mqtt-section" class="layout">
           <div class="card highlight">
             <h2>Coil Temp</h2>
@@ -282,7 +290,7 @@
         </div>
       </section>
 
-      <section id="network-panel" class="layout ipfix hidden">
+      <section id="network-panel" class="layout ipfix hidden" aria-hidden="true">
         <div id="ipfix-section" class="layout ipfix">
           <div class="card highlight">
             <div class="card-head">
@@ -316,7 +324,7 @@
         </div>
       </section>
 
-      <section id="device-panel" class="layout hidden">
+      <section id="device-panel" class="layout hidden" aria-hidden="true">
         <div id="mqtt-extras" class="layout">
           <div class="card wide">
             <h2>State Timeline</h2>
@@ -360,6 +368,117 @@
           </div>
         </div>
       </section>
+
+      <div id="report-backdrop" class="report-backdrop hidden"></div>
+      <aside id="report-drawer" class="report-drawer hidden" aria-hidden="true">
+        <div class="report-drawer-header">
+          <div>
+            <p class="eyebrow">Alert Report</p>
+            <h2 id="report-title">Latest incident report</h2>
+            <p id="report-subtitle" class="hint">Generated operator summary for the selected incident.</p>
+          </div>
+          <div class="report-header-actions">
+            <button id="report-download-btn" class="primary-btn" type="button">Download report</button>
+            <button id="report-close-btn" class="ghost-btn" type="button" aria-label="Close report">Close</button>
+          </div>
+        </div>
+
+        <div class="report-drawer-body">
+          <div id="fusion-alert-card" class="report-summary-panel">
+            <div class="card-head">
+              <div>
+                <h2>Alert Summary</h2>
+                <p class="hint">Operator-facing decision for the selected incident.</p>
+              </div>
+              <span id="report-severity" class="tag medium">--</span>
+            </div>
+            <div class="report-summary-grid">
+              <div class="report-stat">
+                <p class="label">Case status</p>
+                <p id="fusion-alert-flag" class="metric">--</p>
+              </div>
+              <div class="report-stat">
+                <p class="label">Classification</p>
+                <p id="report-attack-category" class="metric small">--</p>
+              </div>
+              <div class="report-stat">
+                <p class="label">Confidence</p>
+                <p id="report-confidence" class="metric small">--</p>
+              </div>
+              <div class="report-stat">
+                <p class="label">Detection surface</p>
+                <p id="report-triggered-by" class="metric small">--</p>
+              </div>
+              <div class="report-stat">
+                <p class="label">Affected scope</p>
+                <p id="report-affected-parts" class="metric small">--</p>
+              </div>
+              <div class="report-stat">
+                <p class="label">Device</p>
+                <p id="report-device-name" class="metric small">--</p>
+              </div>
+              <div class="report-stat">
+                <p class="label">Observed at</p>
+                <p id="report-detected-at" class="metric small">--</p>
+              </div>
+              <div class="report-stat">
+                <p class="label">Report ID</p>
+                <p id="report-incident-id" class="metric small">--</p>
+              </div>
+              <div class="report-narrative">
+                <p class="label">Executive summary</p>
+                <p id="fusion-report-text" class="fusion-report-text">Waiting for fusion report.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="report-section">
+            <div class="section-head">
+              <h3>Recommended Actions</h3>
+              <p class="hint">Immediate operator actions based on the detected severity and category.</p>
+            </div>
+            <div id="report-actions" class="report-actions"></div>
+          </div>
+
+          <div class="report-section">
+            <div class="section-head">
+              <h3>Alert Context</h3>
+              <p class="hint">Where the alert came from and which device path was involved.</p>
+            </div>
+            <div class="report-context-grid">
+              <div class="report-context-item">
+                <p class="label">Device IP</p>
+                <p id="cyber-device-ip" class="metric">--</p>
+              </div>
+              <div class="report-context-item">
+                <p class="label">Source</p>
+                <p id="cyber-source" class="metric">--</p>
+              </div>
+              <div class="report-context-item">
+                <p class="label">Location</p>
+                <p id="cyber-location" class="metric">--</p>
+              </div>
+              <div class="report-context-item">
+                <p class="label">Destination IP</p>
+                <p id="cyber-destination-ip" class="metric">--</p>
+              </div>
+              <div class="report-context-item">
+                <p class="label">Traffic volume</p>
+                <p id="cyber-bytes" class="metric">--</p>
+              </div>
+              <div class="report-context-item">
+                <p class="label">Packets</p>
+                <p id="cyber-packets" class="metric">--</p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </aside>
+      <div class="hidden">
+        <canvas style="height: 180px" id="chart-risk"></canvas>
+        <canvas style="height: 180px" id="chart-traffic"></canvas>
+      </div>
     </main>
 
     <script src="/config.js" onerror=""></script>
