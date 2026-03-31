@@ -40,41 +40,167 @@
       </header>
 
       <section id="main-panel" class="layout main-panel">
-        <div class="main-stage">
-          <div class="alert-hero" id="anomaly-banner">
-            <div class="alert-hero-copy">
-              <p class="eyebrow">Live Alert</p>
-              <h1 id="anomaly-status">Awaiting live alert stream</h1>
-              <p id="anomaly-message" class="hint">The console will elevate the next confirmed incident here.</p>
+        <div class="main-workspace">
+          <div class="main-primary">
+            <div class="workspace-intro">
+              <div>
+                <p class="eyebrow">Operations View</p>
+                <h2>Hospital Security Operations</h2>
+              </div>
+              <p class="hint">
+                Review the highest-priority device alert, recent risk movement, and the latest confirmed incidents.
+              </p>
             </div>
-            <div class="alert-hero-side">
-              <div class="alert-hero-score">
-                <p class="label">Fusion score</p>
-                <p id="anomaly-score" class="hero-metric">--</p>
-              </div>
-              <div class="alert-hero-summary">
-                <div>
-                  <p class="label">Final attack</p>
-                  <p id="attack-category" class="metric small">--</p>
+
+            <div class="alert-hero" id="anomaly-banner">
+              <div class="alert-hero-copy">
+                <p class="eyebrow">Priority Alert</p>
+                <h1 id="anomaly-status">Awaiting live alert stream</h1>
+                <p id="anomaly-message" class="hint">
+                  The console will elevate the next confirmed incident here.
+                </p>
+                <div class="hero-meta-grid">
+                  <div class="hero-meta-item">
+                    <p class="label">Device</p>
+                    <p id="hero-device" class="metric small">--</p>
+                  </div>
+                  <div class="hero-meta-item">
+                    <p class="label">Location</p>
+                    <p id="hero-location" class="metric small">--</p>
+                  </div>
+                  <div class="hero-meta-item">
+                    <p class="label">Surface</p>
+                    <p id="hero-triggered-by" class="metric small">--</p>
+                  </div>
                 </div>
-                <div>
-                  <p class="label">Confidence</p>
-                  <p id="cyber-confidence" class="metric small">--</p>
-                </div>
               </div>
-              <button id="view-report-btn" class="primary-btn" type="button">Open report</button>
+              <div class="alert-hero-side">
+                <div class="alert-hero-score">
+                  <p class="label">Risk score</p>
+                  <p id="anomaly-score" class="hero-metric">--</p>
+                </div>
+                <div class="alert-hero-summary">
+                  <div>
+                    <p class="label">Classification</p>
+                    <p id="attack-category" class="metric small">--</p>
+                  </div>
+                  <div>
+                    <p class="label">Confidence</p>
+                    <p id="cyber-confidence" class="metric small">--</p>
+                  </div>
+                </div>
+                <button id="view-report-btn" class="primary-btn" type="button">Open report</button>
+              </div>
+            </div>
+
+            <div class="security-summary-grid">
+              <article class="summary-card">
+                <p class="label">Active incidents</p>
+                <p id="stat-active-incidents" class="summary-metric">0</p>
+                <p class="hint">Devices currently under confirmed incident conditions.</p>
+              </article>
+              <article class="summary-card">
+                <p class="label">Devices under watch</p>
+                <p id="stat-watch-devices" class="summary-metric">0</p>
+                <p class="hint">Devices showing suspicious or elevated behavior.</p>
+              </article>
+              <article class="summary-card">
+                <p class="label">Monitored devices</p>
+                <p id="stat-monitored-devices" class="summary-metric">0</p>
+                <p class="hint">Devices currently represented in the active fleet view.</p>
+              </article>
+              <article class="summary-card">
+                <p class="label">Observed traffic</p>
+                <p id="stat-observed-traffic" class="summary-metric">--</p>
+                <p class="hint">Latest network volume on the observed device path.</p>
+              </article>
+            </div>
+
+            <div class="section-heading">
+              <div>
+                <h3>Trend Monitoring</h3>
+                <p class="hint">Short-range movement across risk and network load.</p>
+              </div>
+            </div>
+
+            <div class="graph-grid">
+              <article class="graph-panel">
+                <div class="card-head">
+                  <div>
+                    <h2>Risk Trend</h2>
+                    <p class="hint">Trend of the incoming cyber risk score over recent events.</p>
+                  </div>
+                </div>
+                <canvas style="height: 220px" id="chart-risk"></canvas>
+              </article>
+              <article class="graph-panel">
+                <div class="card-head">
+                  <div>
+                    <h2>Traffic Trend</h2>
+                    <p class="hint">Observed traffic volume over recent monitoring windows.</p>
+                  </div>
+                </div>
+                <canvas style="height: 220px" id="chart-traffic"></canvas>
+              </article>
             </div>
           </div>
 
-          <div class="incident-feed-shell">
-            <div class="card-head">
-              <div>
-                <h2>Incident Feed</h2>
-                <p class="hint">Confirmed incidents only. Select a row to open the report.</p>
+          <aside class="main-sidebar">
+            <section class="sidebar-panel focus-panel">
+              <div class="card-head">
+                <div>
+                  <h2>Priority Incident</h2>
+                  <p class="hint">The highest-priority device incident in the fleet right now.</p>
+                </div>
               </div>
-            </div>
-            <div id="main-events" class="main-events"></div>
-          </div>
+              <div class="focus-grid">
+                <div class="focus-item">
+                  <p class="label">Device</p>
+                  <p id="focus-device" class="metric small">--</p>
+                </div>
+                <div class="focus-item">
+                  <p class="label">Location</p>
+                  <p id="focus-location" class="metric small">--</p>
+                </div>
+                <div class="focus-item">
+                  <p class="label">Source</p>
+                  <p id="focus-source" class="metric small">--</p>
+                </div>
+                <div class="focus-item">
+                  <p class="label">Surface</p>
+                  <p id="focus-triggered" class="metric small">--</p>
+                </div>
+                <div class="focus-item wide">
+                  <p class="label">Path</p>
+                  <p id="focus-path" class="metric small">--</p>
+                </div>
+                <div class="focus-item wide">
+                  <p class="label">Observed window</p>
+                  <p id="focus-observed" class="metric small">--</p>
+                </div>
+              </div>
+            </section>
+
+            <section class="sidebar-panel">
+              <div class="card-head">
+                <div>
+                  <h2>Network Paths</h2>
+                  <p class="hint">Top device-to-destination paths in the latest observation window.</p>
+                </div>
+              </div>
+              <div id="main-top-paths" class="main-top-paths"></div>
+            </section>
+
+            <section class="incident-feed-shell sidebar-panel">
+              <div class="card-head">
+                <div>
+                  <h2>Recent Incidents</h2>
+                  <p class="hint">Confirmed incidents only. Select a row to open the report.</p>
+                </div>
+              </div>
+              <div id="main-events" class="main-events"></div>
+            </section>
+          </aside>
         </div>
       </section>
 
@@ -475,10 +601,6 @@
 
         </div>
       </aside>
-      <div class="hidden">
-        <canvas style="height: 180px" id="chart-risk"></canvas>
-        <canvas style="height: 180px" id="chart-traffic"></canvas>
-      </div>
     </main>
 
     <script src="/config.js" onerror=""></script>

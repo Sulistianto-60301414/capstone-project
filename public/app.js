@@ -56,6 +56,20 @@
   const anomalyScoreEl = document.getElementById("anomaly-score");
   const attackCategoryEl = document.getElementById("attack-category");
   const cyberConfidenceEl = document.getElementById("cyber-confidence");
+  const heroDeviceEl = document.getElementById("hero-device");
+  const heroLocationEl = document.getElementById("hero-location");
+  const heroTriggeredByEl = document.getElementById("hero-triggered-by");
+  const statActiveIncidentsEl = document.getElementById("stat-active-incidents");
+  const statWatchDevicesEl = document.getElementById("stat-watch-devices");
+  const statMonitoredDevicesEl = document.getElementById("stat-monitored-devices");
+  const statObservedTrafficEl = document.getElementById("stat-observed-traffic");
+  const focusDeviceEl = document.getElementById("focus-device");
+  const focusLocationEl = document.getElementById("focus-location");
+  const focusSourceEl = document.getElementById("focus-source");
+  const focusTriggeredEl = document.getElementById("focus-triggered");
+  const focusPathEl = document.getElementById("focus-path");
+  const focusObservedEl = document.getElementById("focus-observed");
+  const mainTopPathsEl = document.getElementById("main-top-paths");
   const cyberBytesEl = document.getElementById("cyber-bytes");
   const cyberPacketsEl = document.getElementById("cyber-packets");
   const cyberDeviceIpEl = document.getElementById("cyber-device-ip");
@@ -177,6 +191,7 @@
   let lastStatusSeen = 0;
   let latestStatus = null;
   let latestTelemetry = {};
+  let latestIpfixPoint = null;
   let alerts = [];
   let selectedDevice = null;
   const deviceSet = new Set();
@@ -587,6 +602,7 @@
   function resetClientState() {
     latestStatus = null;
     latestTelemetry = {};
+    latestIpfixPoint = null;
     alerts = [];
     cyberHistory = [];
     latestCyberByDevice.clear();
@@ -604,6 +620,7 @@
     if (sourceNoteEl) sourceNoteEl.textContent = "";
     updateStateBadge(null);
     updateOnlineStatus();
+    renderMainSnapshot();
   }
 
   function setControlStatus(message, isError = false) {
@@ -934,6 +951,7 @@
     setScenarioInputs("global", normalizeScenario(controlState.globalScenario));
     renderControlDevices();
     updateControlPreview();
+    renderMainSnapshot();
     setControlStatus("Control-driven injection is active.");
   }
 
@@ -1004,6 +1022,124 @@
   function getLatestAlertReportPoint() {
     if (!alerts.length) return null;
     return getReportPointForAlert(alerts[alerts.length - 1]) || getLatestAlertCyberPoint();
+  }
+
+  function getTriggeredByLabel(point) {
+    if (!point) return "--";
+    const fusion = point.fusion || {};
+    const surfaces = fusion.triggeredBy || fusion.attackedParts || fusion.anomalousParts || [];
+    return surfaces.length ? surfaces.map((item) => formatAttackLabel(item)).join(" + ") : "--";
+  }
+
+  function isWatchPoint(point) {
+    if (!point) return false;
+    if (isAlertPoint(point)) return true;
+    if (Array.isArray(point.fusion?.anomalousParts) && point.fusion.anomalousParts.length) {
+      return true;
+    }
+    return Number(point.anomalyScore || 0) >= 35;
+  }
+
+  function getFocusPoint() {
+    return getPrimaryAlertPoint() || getLatestAlertReportPoint() || getLatestCyberPoint();
+  }
+
+  function renderMainTopPaths() {
+    if (!mainTopPathsEl) return;
+    const topPaths = latestIpfixPoint?.topPairs || latestIpfixPoint?.topTalkers || [];
+    mainTopPathsEl.innerHTML = "";
+    if (!topPaths.length) {
+      const empty = document.createElement("div");
+      empty.className = "main-top-paths-empty";
+      empty.textContent = "Waiting for network path data.";
+      mainTopPathsEl.appendChild(empty);
+      return;
+    }
+
+    topPaths.slice(0, 4).forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "path-row";
+      row.innerHTML = `
+        <div class="path-copy">
+          <p class="path-name">${item.pair || item.ip || "--"}</p>
+          <p class="path-meta">${item.flows ? `${item.flows} flows` : "Observed path"}</p>
+        </div>
+        <p class="path-volume">${formatBytes(item.bytes || 0)}</p>
+      `;
+      mainTopPathsEl.appendChild(row);
+    });
+  }
+
+  function renderMainSnapshot() {
+    const fleetPoints = getCurrentFleetPoints();
+    const heroPoint = getPrimaryAlertPoint();
+    const heroFusion = heroPoint?.fusion || {};
+    const focusPoint = getFocusPoint();
+    const activeIncidents = fleetPoints.filter((point) => isAlertPoint(point)).length;
+    const watchDevices = fleetPoints.filter((point) => isWatchPoint(point)).length;
+    const monitoredDevices = fleetPoints.length || Number(controlState.deviceCount || 0) || 0;
+    const trafficVolume = latestIpfixPoint?.bytes ?? focusPoint?.bytes ?? null;
+
+    if (statActiveIncidentsEl) statActiveIncidentsEl.textContent = String(activeIncidents);
+    if (statWatchDevicesEl) statWatchDevicesEl.textContent = String(watchDevices);
+    if (statMonitoredDevicesEl) statMonitoredDevicesEl.textContent = String(monitoredDevices);
+    if (statObservedTrafficEl) {
+      statObservedTrafficEl.textContent =
+        trafficVolume === null ? "--" : formatBytes(trafficVolume);
+    }
+
+    if (anomalyScoreEl) {
+      anomalyScoreEl.textContent = heroPoint
+        ? formatNumber(heroPoint.anomalyScore || 0, 1)
+        : "--";
+    }
+    if (attackCategoryEl) {
+      attackCategoryEl.textContent = heroPoint
+        ? formatAttackLabel(heroPoint.attackCategory || heroFusion.attackType || "normal")
+        : "--";
+    }
+    if (cyberConfidenceEl) {
+      cyberConfidenceEl.textContent = heroPoint
+        ? `${Math.round((heroPoint.confidence || 0) * 100)}%`
+        : "--";
+    }
+    if (heroDeviceEl) heroDeviceEl.textContent = heroPoint?.device || "--";
+    if (heroLocationEl) heroLocationEl.textContent = heroPoint?.location || "--";
+    if (heroTriggeredByEl) heroTriggeredByEl.textContent = getTriggeredByLabel(heroPoint);
+
+    if (anomalyStatusEl) {
+      anomalyStatusEl.textContent = heroPoint
+        ? `${formatAttackLabel(
+            heroFusion.attackType || heroPoint.attackCategory || "anomalous behavior"
+          )} detected on ${heroPoint.device || "device"}`
+        : "No active alert";
+    }
+    if (anomalyMessageEl) {
+      anomalyMessageEl.textContent = heroPoint
+        ? heroFusion.report ||
+          "Unusual activity was detected and should be reviewed by the security administrator."
+        : "The console is monitoring the hospital fleet and will elevate the next confirmed incident here.";
+    }
+    if (anomalyBannerEl) {
+      anomalyBannerEl.classList.toggle("alert", Boolean(heroPoint));
+    }
+
+    if (focusDeviceEl) focusDeviceEl.textContent = focusPoint?.device || "--";
+    if (focusLocationEl) focusLocationEl.textContent = focusPoint?.location || "--";
+    if (focusSourceEl) focusSourceEl.textContent = focusPoint?.source || "--";
+    if (focusTriggeredEl) focusTriggeredEl.textContent = getTriggeredByLabel(focusPoint);
+    if (focusPathEl) {
+      focusPathEl.textContent = focusPoint
+        ? `${focusPoint.deviceIp || "--"} -> ${focusPoint.destinationIp || "--"}`
+        : "--";
+    }
+    if (focusObservedEl) {
+      focusObservedEl.textContent = focusPoint
+        ? `${formatBytes(focusPoint.bytes || 0)} · ${focusPoint.packets || 0} packets`
+        : "--";
+    }
+
+    renderMainTopPaths();
   }
 
   function getReportRenderPoint() {
@@ -1341,12 +1477,13 @@
           label,
           data: [],
           borderColor: colors[idx % colors.length],
-          backgroundColor: "rgba(124, 58, 237, 0.12)",
-          tension: 0.32,
-          borderWidth: 2,
-          pointRadius: 2,
-          pointHoverRadius: 3,
-          fill: false,
+          backgroundColor:
+            idx === 0 ? "rgba(22, 50, 79, 0.08)" : "rgba(14, 165, 233, 0.08)",
+          tension: 0.36,
+          borderWidth: 2.5,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          fill: idx === 0,
         })),
       },
       options: {
@@ -1358,20 +1495,37 @@
         },
         plugins: {
           legend: {
-            labels: { color: "#cbd5f5" },
+            display: false,
+          },
+          tooltip: {
+            backgroundColor: "#10263f",
+            titleColor: "#f8fbff",
+            bodyColor: "#dce7f3",
+            padding: 12,
+            displayColors: false,
           },
         },
         scales: {
           x: {
-            ticks: { color: "#94a3b8" },
-            grid: { color: "rgba(148, 163, 184, 0.12)" },
+            ticks: {
+              color: "#607286",
+              maxTicksLimit: 6,
+              autoSkip: true,
+              maxRotation: 0,
+            },
+            grid: { color: "rgba(31, 52, 73, 0.08)" },
           },
           y: {
             ticks: {
-              color: "#94a3b8",
-              callback: (value) => (unit ? `${value}${unit}` : value),
+              color: "#607286",
+              maxTicksLimit: 5,
+              callback: (value) => {
+                if (unit) return `${value}${unit}`;
+                if (Math.abs(value) >= 1000) return Number(value).toLocaleString();
+                return Number.isInteger(value) ? value : Number(value).toFixed(1);
+              },
             },
-            grid: { color: "rgba(148, 163, 184, 0.12)" },
+            grid: { color: "rgba(31, 52, 73, 0.08)" },
             suggestedMin,
             suggestedMax,
           },
@@ -1562,17 +1716,17 @@
       },
       scales: {
         x: {
-          ticks: { color: "#94a3b8" },
-          grid: { color: "rgba(148, 163, 184, 0.12)" },
+          ticks: { color: "#607286" },
+          grid: { color: "rgba(31, 52, 73, 0.08)" },
         },
         y: {
           min: 0,
           max: 4,
           ticks: {
-            color: "#94a3b8",
+            color: "#607286",
             callback: (value) => stateLabels[value] || "",
           },
-          grid: { color: "rgba(148, 163, 184, 0.12)" },
+          grid: { color: "rgba(31, 52, 73, 0.08)" },
         },
       },
     },
@@ -1622,8 +1776,11 @@
       .flatMap((dataset) => dataset.data)
       .filter((value) => Number.isFinite(value));
     const maxValue = values.length ? Math.max(...values) : fallbackMax;
+    const roughMax = Math.max(fallbackMax, maxValue * 1.2);
+    const magnitude = roughMax <= 0 ? 1 : 10 ** Math.floor(Math.log10(roughMax));
+    const roundedMax = Math.ceil(roughMax / magnitude) * magnitude;
     chart.options.scales.y.min = 0;
-    chart.options.scales.y.max = Math.max(fallbackMax, maxValue * 1.2);
+    chart.options.scales.y.max = roundedMax;
   }
 
   function updateGauges(point) {
@@ -1683,13 +1840,16 @@
         const reportPoint = getReportPointForAlert(alert);
         const fusion = reportPoint?.fusion || {};
         const triggeredBy = (fusion.triggeredBy || []).join(" + ") || "No trigger";
+        const classification = formatAttackLabel(
+          reportPoint?.attackCategory || fusion.attackType || alert.code || "incident"
+        );
+        const device = alert.device || reportPoint?.device || "Unknown device";
         return {
           id: `alert-${alert.t || 0}`,
           t: alert.t,
           severity: getSeverity(alert.severity || reportPoint?.severity || "medium"),
-          title: `${formatAttackLabel(
-            reportPoint?.attackCategory || fusion.attackType || alert.code || "incident"
-          )} · ${alert.device || reportPoint?.device || "Unknown device"}`,
+          title: classification,
+          device,
           details: `${reportPoint?.location || "Unknown location"} · ${
             reportPoint?.source || "Unknown source"
           }`,
@@ -1726,6 +1886,7 @@
         <div><span class="tag ${item.severity}">${item.severity}</span></div>
         <div class="event-copy">
           <div class="event-title">${item.title}</div>
+          <div class="event-device">${item.device}</div>
           <div class="event-meta">${item.details}</div>
         </div>
         <div class="event-side">
@@ -1762,51 +1923,6 @@
     updateDynamicYAxis(riskChart, 100);
     updateDynamicYAxis(trafficChart, 1000);
 
-    const heroPoint = getPrimaryAlertPoint();
-    const fusion = heroPoint?.fusion || {};
-    const triggeredBy = (fusion.triggeredBy || []).join(" + ") || "--";
-    const affectedParts = (fusion.attackedParts || fusion.anomalousParts || []).join(", ") || "--";
-    const severity = getSeverity(fusion.severity || heroPoint?.severity || "low");
-
-    if (anomalyScoreEl) {
-      anomalyScoreEl.textContent = heroPoint
-        ? formatNumber(heroPoint.anomalyScore || 0, 1)
-        : "--";
-    }
-    if (attackCategoryEl) {
-      attackCategoryEl.textContent = heroPoint
-        ? formatAttackLabel(heroPoint.attackCategory || fusion.attackType || "normal")
-        : "--";
-    }
-    if (cyberConfidenceEl) {
-      cyberConfidenceEl.textContent = heroPoint
-        ? `${Math.round((heroPoint.confidence || 0) * 100)}%`
-        : "--";
-    }
-
-    if (fusionTriggeredByEl) fusionTriggeredByEl.textContent = triggeredBy;
-    if (fusionAffectedPartsEl) fusionAffectedPartsEl.textContent = affectedParts;
-    if (fusionSeverityEl) {
-      fusionSeverityEl.textContent = severity;
-      fusionSeverityEl.className = `tag ${severity}`;
-    }
-
-    if (anomalyStatusEl) {
-      anomalyStatusEl.textContent = heroPoint
-        ? `${formatAttackLabel(
-            fusion.attackType || heroPoint.attackCategory || "anomalous behavior"
-          )} alert on ${heroPoint.device || "device"}`
-        : "No active alert";
-    }
-    if (anomalyMessageEl) {
-      anomalyMessageEl.textContent = heroPoint
-        ? fusion.report || "A generated report is available for this alert."
-        : "The console is monitoring devices and will elevate the next confirmed incident here.";
-    }
-    if (anomalyBannerEl) {
-      anomalyBannerEl.classList.toggle("alert", Boolean(heroPoint));
-    }
-
     if (
       point.fusion?.alert &&
       (!reportSelectionLocked ||
@@ -1818,6 +1934,7 @@
       reportSelectionLocked = false;
     }
 
+    renderMainSnapshot();
     renderReportDrawer();
   }
 
@@ -1893,6 +2010,7 @@
   function applyIpfix(point) {
     if (!point) return;
     log("ipfix", point);
+    latestIpfixPoint = point;
     const label = timeLabel(point.t || Date.now());
     pushPoint(ipfixRateChart, label, point, ["flowRate"]);
     pushPoint(ipfixBytesChart, label, point, ["bytes"]);
@@ -1913,6 +2031,7 @@
       ipfixBrokerEl.textContent = formatBytes(point.brokerBytes || 0);
     }
     renderIpfixTalkers(point.topPairs || point.topTalkers || []);
+    renderMainSnapshot();
   }
 
   function applyTelemetry(point) {
@@ -2033,6 +2152,7 @@
     }
     updateDevicePicker();
     renderMainEvents();
+    renderMainSnapshot();
     renderReportDrawer();
   }
 
